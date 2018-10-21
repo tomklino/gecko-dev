@@ -41,6 +41,9 @@ const REQUESTS_TOOLTIP_IMAGE_MAX_DIM = 400;
 // Gecko's scrollTop is int32_t, so the maximum value is 2^31 - 1 = 2147483647
 const MAX_SCROLL_HEIGHT = 2147483647;
 
+const LEFT_MOUSE_BUTTON = 0;
+const RIGHT_MOUSE_BUTTON = 2;
+
 /**
  * Renders the actual contents of the request list.
  */
@@ -58,6 +61,7 @@ class RequestListContent extends Component {
       fromCache: PropTypes.bool,
       onCauseBadgeMouseDown: PropTypes.func.isRequired,
       onItemMouseDown: PropTypes.func.isRequired,
+      onItemLeftMouseButtonDown: PropTypes.func.isRequired,
       onSecurityIconMouseDown: PropTypes.func.isRequired,
       onSelectDelta: PropTypes.func.isRequired,
       onWaterfallMouseDown: PropTypes.func.isRequired,
@@ -77,6 +81,7 @@ class RequestListContent extends Component {
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onContextMenu = this.onContextMenu.bind(this);
     this.onFocusedNodeChange = this.onFocusedNodeChange.bind(this);
+    this.onMouseDown = this.onMouseDown.bind(this);
   }
 
   componentWillMount() {
@@ -197,6 +202,14 @@ class RequestListContent extends Component {
     this.tooltip.hide();
   }
 
+  onMouseDown(e, id) {
+    if (e.button === LEFT_MOUSE_BUTTON) {
+      this.props.onItemLeftMouseButtonDown(id)
+    } else if(e.button === RIGHT_MOUSE_BUTTON) {
+      console.log("RIGHT_MOUSE_BUTTON clicked")
+    }
+  }
+
   /**
    * Handler for keyboard events. For arrow up/down, page up/down, home/end,
    * move the selection up or down.
@@ -267,6 +280,7 @@ class RequestListContent extends Component {
       firstRequestStartedMillis,
       onCauseBadgeMouseDown,
       onItemMouseDown,
+      onItemLeftMouseButtonDown,
       onSecurityIconMouseDown,
       onWaterfallMouseDown,
       requestFilterTypes,
@@ -296,7 +310,7 @@ class RequestListContent extends Component {
               key: item.id,
               onContextMenu: this.onContextMenu,
               onFocusedNodeChange: this.onFocusedNodeChange,
-              onMouseDown: () => onItemMouseDown(item.id),
+              onMouseDown: (e) => this.onMouseDown(e, item.id),
               onCauseBadgeMouseDown: () => onCauseBadgeMouseDown(item.cause),
               onSecurityIconMouseDown: () => onSecurityIconMouseDown(item.securityState),
               onWaterfallMouseDown: () => onWaterfallMouseDown(),
@@ -332,7 +346,12 @@ module.exports = connect(
         dispatch(Actions.selectDetailsPanelTab("stack-trace"));
       }
     },
-    onItemMouseDown: (id) => dispatch(Actions.selectRequest(id)),
+    onItemLeftMouseButtonDown: (id) => {
+      dispatch(Actions.selectRequest(id))
+    },
+    onItemMouseDown: (id) => {
+      dispatch(Actions.selectRequest(id))
+    },
     /**
      * A handler that opens the security tab in the details view if secure or
      * broken security indicator is clicked.
