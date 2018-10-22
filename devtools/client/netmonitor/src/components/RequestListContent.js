@@ -55,13 +55,15 @@ class RequestListContent extends Component {
       networkDetailsOpen: PropTypes.bool.isRequired,
       networkDetailsWidth: PropTypes.number,
       networkDetailsHeight: PropTypes.number,
-      cloneSelectedRequest: PropTypes.func.isRequired,
+      cloneRequest: PropTypes.func.isRequired,
       displayedRequests: PropTypes.array.isRequired,
+      clickedRequest: PropTypes.object,
       firstRequestStartedMillis: PropTypes.number.isRequired,
       fromCache: PropTypes.bool,
       onCauseBadgeMouseDown: PropTypes.func.isRequired,
       onItemMouseDown: PropTypes.func.isRequired,
-      onItemLeftMouseButtonDown: PropTypes.func.isRequired,
+      selectRequest: PropTypes.func.isRequired,
+      onItemRightMouseButtonDown: PropTypes.func.isRequired,
       onSecurityIconMouseDown: PropTypes.func.isRequired,
       onSelectDelta: PropTypes.func.isRequired,
       onWaterfallMouseDown: PropTypes.func.isRequired,
@@ -204,9 +206,10 @@ class RequestListContent extends Component {
 
   onMouseDown(e, id) {
     if (e.button === LEFT_MOUSE_BUTTON) {
-      this.props.onItemLeftMouseButtonDown(id)
+      this.props.selectRequest(id)
     } else if(e.button === RIGHT_MOUSE_BUTTON) {
       console.log("RIGHT_MOUSE_BUTTON clicked")
+      this.props.onItemRightMouseButtonDown(id)
     }
   }
 
@@ -250,18 +253,22 @@ class RequestListContent extends Component {
 
   onContextMenu(evt) {
     evt.preventDefault();
-    const { selectedRequest, displayedRequests } = this.props;
+    const { displayedRequests, clickedRequest } = this.props;
 
     if (!this.contextMenu) {
-      const { connector, cloneSelectedRequest, openStatistics } = this.props;
+      const {
+        connector,
+        cloneRequest,
+        openStatistics,
+      } = this.props;
       this.contextMenu = new RequestListContextMenu({
         connector,
-        cloneSelectedRequest,
+        cloneRequest,
         openStatistics,
       });
     }
 
-    this.contextMenu.open(evt, selectedRequest, displayedRequests);
+    this.contextMenu.open(evt, clickedRequest, displayedRequests);
   }
 
   /**
@@ -280,7 +287,8 @@ class RequestListContent extends Component {
       firstRequestStartedMillis,
       onCauseBadgeMouseDown,
       onItemMouseDown,
-      onItemLeftMouseButtonDown,
+      selectRequest,
+      onItemRightMouseButtonDown,
       onSecurityIconMouseDown,
       onWaterfallMouseDown,
       requestFilterTypes,
@@ -308,7 +316,7 @@ class RequestListContent extends Component {
               index,
               isSelected: item.id === (selectedRequest && selectedRequest.id),
               key: item.id,
-              onContextMenu: this.onContextMenu,
+              onContextMenu: (evt) => { this.onContextMenu(evt) },
               onFocusedNodeChange: this.onFocusedNodeChange,
               onMouseDown: (e) => this.onMouseDown(e, item.id),
               onCauseBadgeMouseDown: () => onCauseBadgeMouseDown(item.cause),
@@ -330,13 +338,16 @@ module.exports = connect(
     networkDetailsWidth: state.ui.networkDetailsWidth,
     networkDetailsHeight: state.ui.networkDetailsHeight,
     displayedRequests: getDisplayedRequests(state),
+    clickedRequest: state.requests.clickedRequest,
     firstRequestStartedMillis: state.requests.firstStartedMillis,
     selectedRequest: getSelectedRequest(state),
     scale: getWaterfallScale(state),
     requestFilterTypes: state.filters.requestFilterTypes,
   }),
   (dispatch, props) => ({
-    cloneSelectedRequest: () => dispatch(Actions.cloneSelectedRequest()),
+    cloneRequest: (id) => {
+      dispatch(Actions.cloneRequest(id))
+    },
     openStatistics: (open) => dispatch(Actions.openStatistics(props.connector, open)),
     /**
      * A handler that opens the stack trace tab when a stack trace is available
@@ -346,9 +357,14 @@ module.exports = connect(
         dispatch(Actions.selectDetailsPanelTab("stack-trace"));
       }
     },
-    onItemLeftMouseButtonDown: (id) => {
+    selectRequest: (id) => {
       dispatch(Actions.selectRequest(id))
     },
+
+    onItemRightMouseButtonDown: (id) => {
+      dispatch(Actions.rightClickRequest(id))
+    },
+
     onItemMouseDown: (id) => {
       dispatch(Actions.selectRequest(id))
     },

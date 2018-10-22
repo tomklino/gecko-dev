@@ -11,7 +11,9 @@ const {
 const {
   ADD_REQUEST,
   CLEAR_REQUESTS,
+  CLONE_REQUEST,
   CLONE_SELECTED_REQUEST,
+  RIGHT_CLICK_REQUEST,
   OPEN_NETWORK_DETAILS,
   REMOVE_SELECTED_CUSTOM_REQUEST,
   SELECT_REQUEST,
@@ -117,35 +119,22 @@ function requestsReducer(state = Requests(), action) {
       };
     }
 
-    // Clone selected request for re-send.
     case CLONE_SELECTED_REQUEST: {
-      const { requests, selectedId } = state;
+      return cloneRequest(state, state.selectedId)
+    }
 
-      if (!selectedId) {
-        return state;
-      }
+    // Clone request for re-send.
+    case CLONE_REQUEST: {
+      return cloneRequest(state, action.id)
+    }
 
-      const clonedRequest = requests.get(selectedId);
-      if (!clonedRequest) {
-        return state;
-      }
-
-      const newRequest = {
-        id: clonedRequest.id + "-clone",
-        method: clonedRequest.method,
-        url: clonedRequest.url,
-        urlDetails: clonedRequest.urlDetails,
-        requestHeaders: clonedRequest.requestHeaders,
-        requestPostData: clonedRequest.requestPostData,
-        requestPostDataAvailable: clonedRequest.requestPostDataAvailable,
-        isCustom: true
-      };
-
+    case RIGHT_CLICK_REQUEST: {
+      const { requests } = state;
+      const clickedRequest = requests.get(action.id);
       return {
         ...state,
-        requests: mapSet(requests, newRequest.id, newRequest),
-        selectedId: newRequest.id,
-      };
+        clickedRequest
+      }
     }
 
     // Removing temporary cloned request (created for re-send, but canceled).
@@ -191,6 +180,36 @@ function requestsReducer(state = Requests(), action) {
 }
 
 // Helpers
+
+function cloneRequest(state, id) {
+  const { requests } = state;
+
+  if (!id) {
+    return state;
+  }
+
+  const clonedRequest = requests.get(id);
+  if (!clonedRequest) {
+    return state;
+  }
+
+  const newRequest = {
+    id: clonedRequest.id + "-clone",
+    method: clonedRequest.method,
+    url: clonedRequest.url,
+    urlDetails: clonedRequest.urlDetails,
+    requestHeaders: clonedRequest.requestHeaders,
+    requestPostData: clonedRequest.requestPostData,
+    requestPostDataAvailable: clonedRequest.requestPostDataAvailable,
+    isCustom: true
+  };
+
+  return {
+    ...state,
+    requests: mapSet(requests, newRequest.id, newRequest),
+    selectedId: newRequest.id,
+  };
+}
 
 /**
  * Remove the currently selected custom request.

@@ -26,7 +26,7 @@ class RequestListContextMenu {
     this.props = props;
   }
 
-  open(event, selectedRequest, requests) {
+  open(event, clickedRequest, requests) {
     const {
       id,
       isCustom,
@@ -43,10 +43,10 @@ class RequestListContextMenu {
       responseContent,
       responseContentAvailable,
       url,
-    } = selectedRequest;
+    } = clickedRequest;
     const {
       connector,
-      cloneSelectedRequest,
+      cloneRequest,
       openStatistics,
     } = this.props;
     const menu = [];
@@ -56,7 +56,7 @@ class RequestListContextMenu {
       id: "request-list-context-copy-url",
       label: L10N.getStr("netmonitor.context.copyUrl"),
       accesskey: L10N.getStr("netmonitor.context.copyUrl.accesskey"),
-      visible: !!selectedRequest,
+      visible: !!clickedRequest,
       click: () => this.copyUrl(url),
     });
 
@@ -64,7 +64,7 @@ class RequestListContextMenu {
       id: "request-list-context-copy-url-params",
       label: L10N.getStr("netmonitor.context.copyUrlParams"),
       accesskey: L10N.getStr("netmonitor.context.copyUrlParams.accesskey"),
-      visible: !!(selectedRequest && getUrlQuery(url)),
+      visible: !!(clickedRequest && getUrlQuery(url)),
       click: () => this.copyUrlParams(url),
     });
 
@@ -74,7 +74,7 @@ class RequestListContextMenu {
       accesskey: L10N.getStr("netmonitor.context.copyRequestData.accesskey"),
       // Menu item will be visible even if data hasn't arrived, so we need to check
       // *Available property and then fetch data lazily once user triggers the action.
-      visible: !!(selectedRequest && (requestPostDataAvailable || requestPostData)),
+      visible: !!(clickedRequest && (requestPostDataAvailable || requestPostData)),
       click: () => this.copyPostData(id, formDataSections, requestPostData),
     });
 
@@ -84,7 +84,7 @@ class RequestListContextMenu {
       accesskey: L10N.getStr("netmonitor.context.copyAsCurl.accesskey"),
       // Menu item will be visible even if data hasn't arrived, so we need to check
       // *Available property and then fetch data lazily once user triggers the action.
-      visible: !!selectedRequest,
+      visible: !!clickedRequest,
       click: () =>
         this.copyAsCurl(id, url, method, httpVersion, requestHeaders, requestPostData),
     });
@@ -100,7 +100,7 @@ class RequestListContextMenu {
       accesskey: L10N.getStr("netmonitor.context.copyRequestHeaders.accesskey"),
       // Menu item will be visible even if data hasn't arrived, so we need to check
       // *Available property and then fetch data lazily once user triggers the action.
-      visible: !!(selectedRequest && (requestHeadersAvailable || requestHeaders)),
+      visible: !!(clickedRequest && (requestHeadersAvailable || requestHeaders)),
       click: () => this.copyRequestHeaders(id, requestHeaders),
     });
 
@@ -110,7 +110,7 @@ class RequestListContextMenu {
       accesskey: L10N.getStr("netmonitor.context.copyResponseHeaders.accesskey"),
       // Menu item will be visible even if data hasn't arrived, so we need to check
       // *Available property and then fetch data lazily once user triggers the action.
-      visible: !!(selectedRequest && (responseHeadersAvailable || responseHeaders)),
+      visible: !!(clickedRequest && (responseHeadersAvailable || responseHeaders)),
       click: () => this.copyResponseHeaders(id, responseHeaders),
     });
 
@@ -120,7 +120,7 @@ class RequestListContextMenu {
       accesskey: L10N.getStr("netmonitor.context.copyResponse.accesskey"),
       // Menu item will be visible even if data hasn't arrived, so we need to check
       // *Available property and then fetch data lazily once user triggers the action.
-      visible: !!(selectedRequest && (responseContentAvailable || responseContent)),
+      visible: !!(clickedRequest && (responseContentAvailable || responseContent)),
       click: () => this.copyResponse(id, responseContent),
     });
 
@@ -128,7 +128,7 @@ class RequestListContextMenu {
       id: "request-list-context-copy-image-as-data-uri",
       label: L10N.getStr("netmonitor.context.copyImageAsDataUri"),
       accesskey: L10N.getStr("netmonitor.context.copyImageAsDataUri.accesskey"),
-      visible: !!(selectedRequest && (responseContentAvailable || responseContent) &&
+      visible: !!(clickedRequest && (responseContentAvailable || responseContent) &&
         mimeType && mimeType.includes("image/")),
       click: () => this.copyImageAsDataUri(id, mimeType, responseContent),
     });
@@ -149,7 +149,7 @@ class RequestListContextMenu {
     menu.push({
       label: L10N.getStr("netmonitor.context.copy"),
       accesskey: L10N.getStr("netmonitor.context.copy.accesskey"),
-      visible: !!selectedRequest,
+      visible: !!clickedRequest,
       submenu: copySubmenu,
     });
 
@@ -165,7 +165,7 @@ class RequestListContextMenu {
       id: "request-list-context-save-image-as",
       label: L10N.getStr("netmonitor.context.saveImageAs"),
       accesskey: L10N.getStr("netmonitor.context.saveImageAs.accesskey"),
-      visible: !!(selectedRequest && (responseContentAvailable || responseContent) &&
+      visible: !!(clickedRequest && (responseContentAvailable || responseContent) &&
         mimeType && mimeType.includes("image/")),
       click: () => this.saveImageAs(id, url, responseContent),
     });
@@ -179,8 +179,8 @@ class RequestListContextMenu {
       id: "request-list-context-resend",
       label: L10N.getStr("netmonitor.context.editAndResend"),
       accesskey: L10N.getStr("netmonitor.context.editAndResend.accesskey"),
-      visible: !!(selectedRequest && !isCustom),
-      click: cloneSelectedRequest,
+      visible: !!(clickedRequest && !isCustom),
+      click: () => { cloneRequest(id) },
     });
 
     menu.push({
@@ -192,7 +192,7 @@ class RequestListContextMenu {
       id: "request-list-context-newtab",
       label: L10N.getStr("netmonitor.context.newTab"),
       accesskey: L10N.getStr("netmonitor.context.newTab.accesskey"),
-      visible: !!selectedRequest,
+      visible: !!clickedRequest,
       click: () => this.openRequestInTab(id, url, requestHeaders, requestPostData),
     });
 
@@ -200,7 +200,7 @@ class RequestListContextMenu {
       id: "request-list-context-open-in-debugger",
       label: L10N.getStr("netmonitor.context.openInDebugger"),
       accesskey: L10N.getStr("netmonitor.context.openInDebugger.accesskey"),
-      visible: !!(selectedRequest && mimeType && mimeType.includes("javascript")),
+      visible: !!(clickedRequest && mimeType && mimeType.includes("javascript")),
       click: () => this.openInDebugger(url),
     });
 
@@ -208,7 +208,7 @@ class RequestListContextMenu {
       id: "request-list-context-open-in-style-editor",
       label: L10N.getStr("netmonitor.context.openInStyleEditor"),
       accesskey: L10N.getStr("netmonitor.context.openInStyleEditor.accesskey"),
-      visible: !!(selectedRequest &&
+      visible: !!(clickedRequest &&
         Services.prefs.getBoolPref("devtools.styleeditor.enabled") &&
         mimeType && mimeType.includes("css")),
       click: () => this.openInStyleEditor(url),
