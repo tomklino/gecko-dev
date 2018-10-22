@@ -7,7 +7,9 @@
 const {
   ADD_REQUEST,
   CLEAR_REQUESTS,
+  CLONE_REQUEST,
   CLONE_SELECTED_REQUEST,
+  RIGHT_CLICK_REQUEST,
   REMOVE_SELECTED_CUSTOM_REQUEST,
   SEND_CUSTOM_REQUEST,
   TOGGLE_RECORDING,
@@ -40,6 +42,21 @@ function updateRequest(id, data, batch) {
 function cloneSelectedRequest() {
   return {
     type: CLONE_SELECTED_REQUEST,
+  }
+}
+
+function cloneRequest(id) {
+  return {
+    type: CLONE_REQUEST,
+    id
+  };
+}
+
+
+function rightClickRequest(id) {
+  return {
+    type: RIGHT_CLICK_REQUEST,
+    id
   };
 }
 
@@ -105,7 +122,9 @@ function toggleRecording() {
 module.exports = {
   addRequest,
   clearRequests,
+  cloneRequest,
   cloneSelectedRequest,
+  rightClickRequest,
   removeSelectedCustomRequest,
   sendCustomRequest,
   toggleRecording,
