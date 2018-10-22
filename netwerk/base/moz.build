@@ -177,6 +177,7 @@ EXPORTS.mozilla.net += [
     'Predictor.h',
     'RedirectChannelRegistrar.h',
     'ReferrerPolicy.h',
+    'RequestContextService.h',
     'SimpleChannelParent.h',
     'TCPFastOpen.h',
 ]
@@ -301,7 +302,6 @@ LOCAL_INCLUDES += [
     '/dom/base',
     '/netwerk/protocol/http',
     '/netwerk/socket',
-    '/security/pkix/include'
 ]
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):

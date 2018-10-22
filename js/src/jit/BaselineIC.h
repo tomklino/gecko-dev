@@ -214,118 +214,30 @@ void TypeFallbackICSpew(JSContext* cx, ICTypeMonitor_Fallback* stub, const char*
 #define TypeFallbackICSpew(...)
 #endif
 
-//
-// An entry in the JIT IC descriptor table.
-//
+// An entry in the BaselineScript IC descriptor table. There's one ICEntry per
+// IC.
 class ICEntry
 {
-  private:
-    // A pointer to the shared IC stub for this instruction.
+    // A pointer to the first IC stub for this instruction.
     ICStub* firstStub_;
 
-    // Offset from the start of the JIT code where the IC
-    // load and call instructions are.
-    uint32_t returnOffset_;
-
     // The PC of this IC's bytecode op within the JSScript.
-    uint32_t pcOffset_ : 28;
+    uint32_t pcOffset_ : 31;
+    uint32_t isForOp_ : 1;
 
   public:
-    enum Kind {
-        // A for-op IC entry.
-        Kind_Op = 0,
-
-        // A non-op IC entry.
-        Kind_NonOp,
-
-        // A fake IC entry for returning from a callVM for an op.
-        Kind_CallVM,
-
-        // A fake IC entry for returning from a callVM not for an op (e.g., in
-        // the prologue).
-        Kind_NonOpCallVM,
-
-        // A fake IC entry for returning from a callVM to after the
-        // warmup counter.
-        Kind_WarmupCounter,
-
-        // A fake IC entry for returning from a callVM to the interrupt
-        // handler via the over-recursion check on function entry.
-        Kind_StackCheck,
-
-        // As above, but for the early check. See emitStackCheck.
-        Kind_EarlyStackCheck,
-
-        // A fake IC entry for returning from DebugTrapHandler.
-        Kind_DebugTrap,
-
-        // A fake IC entry for returning from a callVM to
-        // Debug{Prologue,AfterYield,Epilogue}.
-        Kind_DebugPrologue,
-        Kind_DebugAfterYield,
-        Kind_DebugEpilogue,
-
-        Kind_Invalid
-    };
-
-  private:
-    // What this IC is for.
-    Kind kind_ : 4;
-
-    // Set the kind and asserts that it's sane.
-    void setKind(Kind kind) {
-        MOZ_ASSERT(kind < Kind_Invalid);
-        kind_ = kind;
-        MOZ_ASSERT(this->kind() == kind);
-    }
-
-  public:
-    ICEntry(uint32_t pcOffset, Kind kind)
-      : firstStub_(nullptr), returnOffset_(), pcOffset_(pcOffset)
+    ICEntry(ICStub* firstStub, uint32_t pcOffset, bool isForOp)
+      : firstStub_(firstStub), pcOffset_(pcOffset), isForOp_(uint32_t(isForOp))
     {
-        // The offset must fit in at least 28 bits, since we shave off 4 for
-        // the Kind enum.
+        // The offset must fit in at least 31 bits, since we shave off 1 for
+        // the isForOp_ flag.
         MOZ_ASSERT(pcOffset_ == pcOffset);
-        JS_STATIC_ASSERT(BaselineScript::MAX_JSSCRIPT_LENGTH <= (1u << 28) - 1);
-        MOZ_ASSERT(pcOffset <= BaselineScript::MAX_JSSCRIPT_LENGTH);
-        setKind(kind);
+        JS_STATIC_ASSERT(BaselineMaxScriptLength <= (1u << 31) - 1);
+        MOZ_ASSERT(pcOffset <= BaselineMaxScriptLength);
     }
 
-    CodeOffset returnOffset() const {
-        return CodeOffset(returnOffset_);
-    }
-
-    void setReturnOffset(CodeOffset offset) {
-        MOZ_ASSERT(offset.offset() <= (size_t) UINT32_MAX);
-        returnOffset_ = (uint32_t) offset.offset();
-    }
-
-    uint32_t pcOffset() const {
-        return pcOffset_;
-    }
-
-    jsbytecode* pc(JSScript* script) const {
-        return script->offsetToPC(pcOffset_);
-    }
-
-    Kind kind() const {
-        // MSVC compiles enums as signed.
-        return Kind(kind_ & 0xf);
-    }
-    bool isForOp() const {
-        return kind() == Kind_Op;
-    }
-
-    void setFakeKind(Kind kind) {
-        MOZ_ASSERT(kind != Kind_Op && kind != Kind_NonOp);
-        setKind(kind);
-    }
-
-    bool hasStub() const {
-        return firstStub_ != nullptr;
-    }
     ICStub* firstStub() const {
-        MOZ_ASSERT(hasStub());
+        MOZ_ASSERT(firstStub_);
         return firstStub_;
     }
 
@@ -335,12 +247,23 @@ class ICEntry
         firstStub_ = stub;
     }
 
+    uint32_t pcOffset() const {
+        return pcOffset_;
+    }
+    jsbytecode* pc(JSScript* script) const {
+        return script->offsetToPC(pcOffset_);
+    }
+
     static inline size_t offsetOfFirstStub() {
         return offsetof(ICEntry, firstStub_);
     }
 
     inline ICStub** addressOfFirstStub() {
         return &firstStub_;
+    }
+
+    bool isForOp() const {
+        return !!isForOp_;
     }
 
     void trace(JSTracer* trc);
@@ -712,8 +635,14 @@ class ICFallbackStub : public ICStub
     // The IC entry for this linked list of stubs.
     ICEntry* icEntry_;
 
-    // The number of stubs kept in the IC entry.
+    // The state of this IC
     ICState state_;
+
+    // Counts the number of times the stub was entered
+    //
+    // See Bug 1494473 comment 6 for a mechanism to handle overflow if overflow
+    // becomes a concern.
+    uint32_t enteredCount_;
 
     // A pointer to the location stub pointer that needs to be
     // changed to add a new "last" stub immediately before the fallback
@@ -726,12 +655,14 @@ class ICFallbackStub : public ICStub
       : ICStub(kind, ICStub::Fallback, stubCode),
         icEntry_(nullptr),
         state_(),
+        enteredCount_(0),
         lastStubPtrAddr_(nullptr) {}
 
     ICFallbackStub(Kind kind, Trait trait, JitCode* stubCode)
       : ICStub(kind, trait, stubCode),
         icEntry_(nullptr),
         state_(),
+        enteredCount_(0),
         lastStubPtrAddr_(nullptr)
     {
         MOZ_ASSERT(trait == ICStub::Fallback ||
@@ -812,6 +743,11 @@ class ICFallbackStub : public ICStub
 
     void unlinkStub(Zone* zone, ICStub* prev, ICStub* stub);
     void unlinkStubsWithKind(JSContext* cx, ICStub::Kind kind);
+
+    // Return the number of times this stub has successfully provided a value to the
+    // caller.
+    uint32_t enteredCount() const { return enteredCount_; }
+    inline void incrementEnteredCount() { enteredCount_++; }
 };
 
 // Base class for Trait::Regular CacheIR stubs
@@ -819,10 +755,17 @@ class ICCacheIR_Regular : public ICStub
 {
     const CacheIRStubInfo* stubInfo_;
 
+    // Counts the number of times the stub was entered
+    //
+    // See Bug 1494473 comment 6 for a mechanism to handle overflow if overflow
+    // becomes a concern.
+    uint32_t enteredCount_;
+
   public:
     ICCacheIR_Regular(JitCode* stubCode, const CacheIRStubInfo* stubInfo)
       : ICStub(ICStub::CacheIR_Regular, stubCode),
-        stubInfo_(stubInfo)
+        stubInfo_(stubInfo),
+        enteredCount_(0)
     {}
 
     static ICCacheIR_Regular* Clone(JSContext* cx, ICStubSpace* space, ICStub* firstMonitorStub,
@@ -840,6 +783,11 @@ class ICCacheIR_Regular : public ICStub
     }
 
     uint8_t* stubDataStart();
+
+    // Return the number of times this stub has successfully provided a value to the
+    // caller.
+    uint32_t enteredCount() const { return enteredCount_; }
+    static size_t offsetOfEnteredCount() { return offsetof(ICCacheIR_Regular, enteredCount_); }
 };
 
 // Monitored stubs are IC stubs that feed a single resulting value out to a
@@ -1800,7 +1748,6 @@ class ICGetElem_Fallback : public ICMonitoredFallbackStub
     { }
 
     static const uint16_t EXTRA_NEGATIVE_INDEX = 0x1;
-    static const uint16_t EXTRA_UNOPTIMIZABLE_ACCESS = 0x2;
 
   public:
     void noteNegativeIndex() {
@@ -1808,12 +1755,6 @@ class ICGetElem_Fallback : public ICMonitoredFallbackStub
     }
     bool hasNegativeIndex() const {
         return extra_ & EXTRA_NEGATIVE_INDEX;
-    }
-    void noteUnoptimizableAccess() {
-        extra_ |= EXTRA_UNOPTIMIZABLE_ACCESS;
-    }
-    bool hadUnoptimizableAccess() const {
-        return extra_ & EXTRA_UNOPTIMIZABLE_ACCESS;
     }
 
     // Compiler for this stub kind.
@@ -1941,15 +1882,6 @@ class ICGetName_Fallback : public ICMonitoredFallbackStub
     { }
 
   public:
-    static const size_t UNOPTIMIZABLE_ACCESS_BIT = 0;
-
-    void noteUnoptimizableAccess() {
-        extra_ |= (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
-    bool hadUnoptimizableAccess() const {
-        return extra_ & (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
-
     class Compiler : public ICStubCompiler {
       protected:
         MOZ_MUST_USE bool generateStubCode(MacroAssembler& masm) override;
@@ -2030,15 +1962,7 @@ class ICGetProp_Fallback : public ICMonitoredFallbackStub
     { }
 
   public:
-    static const size_t UNOPTIMIZABLE_ACCESS_BIT = 0;
     static const size_t ACCESSED_GETTER_BIT = 1;
-
-    void noteUnoptimizableAccess() {
-        extra_ |= (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
-    bool hadUnoptimizableAccess() const {
-        return extra_ & (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
 
     void noteAccessedGetter() {
         extra_ |= (1u << ACCESSED_GETTER_BIT);
@@ -2087,14 +2011,6 @@ class ICSetProp_Fallback : public ICFallbackStub
     { }
 
   public:
-    static const size_t UNOPTIMIZABLE_ACCESS_BIT = 0;
-    void noteUnoptimizableAccess() {
-        extra_ |= (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
-    bool hadUnoptimizableAccess() const {
-        return extra_ & (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
-
     class Compiler : public ICStubCompiler {
       protected:
         CodeOffset bailoutReturnOffset_;
@@ -2152,8 +2068,6 @@ class ICCall_Fallback : public ICMonitoredFallbackStub
 {
     friend class ICStubSpace;
   public:
-    static const unsigned UNOPTIMIZABLE_CALL_FLAG = 0x1;
-
     static const uint32_t MAX_OPTIMIZED_STUBS = 16;
 
   private:
@@ -2162,13 +2076,6 @@ class ICCall_Fallback : public ICMonitoredFallbackStub
     {}
 
   public:
-    void noteUnoptimizableCall() {
-        extra_ |= UNOPTIMIZABLE_CALL_FLAG;
-    }
-    bool hadUnoptimizableCall() const {
-        return extra_ & UNOPTIMIZABLE_CALL_FLAG;
-    }
-
     bool scriptedStubsAreGeneralized() const {
         return hasStub(Call_AnyScripted);
     }
@@ -2859,17 +2766,7 @@ class ICInstanceOf_Fallback : public ICFallbackStub
       : ICFallbackStub(ICStub::InstanceOf_Fallback, stubCode)
     { }
 
-    static const uint16_t UNOPTIMIZABLE_ACCESS_BIT = 0x1;
-
   public:
-
-    void noteUnoptimizableAccess() {
-        extra_ |= UNOPTIMIZABLE_ACCESS_BIT;
-    }
-    bool hadUnoptimizableAccess() const {
-        return extra_ & UNOPTIMIZABLE_ACCESS_BIT;
-    }
-
     class Compiler : public ICStubCompiler {
       protected:
         MOZ_MUST_USE bool generateStubCode(MacroAssembler& masm) override;
@@ -3074,16 +2971,6 @@ class ICCompare_Fallback : public ICFallbackStub
       : ICFallbackStub(ICStub::Compare_Fallback, stubCode) {}
 
   public:
-    static const uint32_t MAX_OPTIMIZED_STUBS = 8;
-
-    static const size_t UNOPTIMIZABLE_ACCESS_BIT = 0;
-    void noteUnoptimizableAccess() {
-        extra_ |= (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
-    bool hadUnoptimizableAccess() const {
-        return extra_ & (1u << UNOPTIMIZABLE_ACCESS_BIT);
-    }
-
     // Compiler for this stub kind.
     class Compiler : public ICStubCompiler {
       protected:
@@ -3116,7 +3003,6 @@ class ICBinaryArith_Fallback : public ICFallbackStub
     }
 
     static const uint16_t SAW_DOUBLE_RESULT_BIT = 0x1;
-    static const uint16_t UNOPTIMIZABLE_OPERANDS_BIT = 0x2;
 
   public:
     static const uint32_t MAX_OPTIMIZED_STUBS = 8;
@@ -3126,12 +3012,6 @@ class ICBinaryArith_Fallback : public ICFallbackStub
     }
     void setSawDoubleResult() {
         extra_ |= SAW_DOUBLE_RESULT_BIT;
-    }
-    bool hadUnoptimizableOperands() const {
-        return extra_ & UNOPTIMIZABLE_OPERANDS_BIT;
-    }
-    void noteUnoptimizableOperands() {
-        extra_ |= UNOPTIMIZABLE_OPERANDS_BIT;
     }
 
     // Compiler for this stub kind.

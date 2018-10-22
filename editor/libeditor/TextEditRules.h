@@ -7,6 +7,7 @@
 #define mozilla_TextEditRules_h
 
 #include "mozilla/EditAction.h"
+#include "mozilla/EditorBase.h"
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/EditorUtils.h"
 #include "mozilla/HTMLEditor.h" // for nsIEditor::AsHTMLEditor()
@@ -57,6 +58,13 @@ class Selection;
 class TextEditRules : public nsITimerCallback
                     , public nsINamed
 {
+protected:
+  typedef EditorBase::AutoSelectionRestorer
+            AutoSelectionRestorer;
+  typedef EditorBase::AutoTopLevelEditSubActionNotifier
+            AutoTopLevelEditSubActionNotifier;
+  typedef EditorBase::AutoTransactionsConserveSelection
+            AutoTransactionsConserveSelection;
 public:
   typedef dom::Element Element;
   typedef dom::Selection Selection;
@@ -80,6 +88,7 @@ public:
                               nsIEditor::EDirection aDirection);
   virtual nsresult AfterEdit(EditSubAction aEditSubAction,
                              nsIEditor::EDirection aDirection);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual nsresult WillDoAction(Selection* aSelection,
                                 EditSubActionInfo& aInfo,
                                 bool* aCancel,
@@ -142,6 +151,12 @@ public:
     return !!mBogusNode;
   }
 
+  /**
+   * HideLastPasswordInput() is called while Nodify() is calling
+   * TextEditor::HideLastPasswordInput().
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult HideLastPasswordInput(Selection& aSelection);
+
 protected:
 
   void InitFields();
@@ -162,6 +177,7 @@ protected:
    * @param aMaxLength          The maximum string length which the editor
    *                            allows to set.
    */
+  MOZ_CAN_RUN_SCRIPT
   MOZ_MUST_USE nsresult
   WillInsertText(EditSubAction aEditSubAction, bool* aCancel, bool* aHandled,
                  const nsAString* inString, nsAString* outString,
@@ -215,6 +231,7 @@ protected:
    * @param aCancel             Returns true if the operation is canceled.
    * @param aHandled            Returns true if the edit action is handled.
    */
+  MOZ_CAN_RUN_SCRIPT
   MOZ_MUST_USE nsresult
   WillDeleteSelection(nsIEditor::EDirection aCollapsedAction,
                       bool* aCancel, bool* aHandled);
@@ -230,6 +247,7 @@ protected:
    * @param aCancel             Returns true if the operation is canceled.
    * @param aHandled            Returns true if the edit action is handled.
    */
+  MOZ_CAN_RUN_SCRIPT
   MOZ_MUST_USE nsresult
   DeleteSelectionWithTransaction(nsIEditor::EDirection aCollapsedAction,
                                  bool* aCancel, bool* aHandled);
@@ -345,11 +363,12 @@ protected:
                                      bool* aCancel);
 
   /**
-   * HideLastPWInput() replaces last password characters which have not
-   * been replaced with mask character like '*' with with the mask character.
-   * This method may cause destroying the editor.
+   * HideLastPasswordInputInternal() replaces last password characters which
+   * have not been replaced with mask character like '*' with with the mask
+   * character.  This method may cause destroying the editor.
    */
-  MOZ_MUST_USE nsresult HideLastPWInput();
+  MOZ_CAN_RUN_SCRIPT
+  MOZ_MUST_USE nsresult HideLastPasswordInputInternal();
 
   /**
    * CollapseSelectionToTrailingBRIfNeeded() collapses selection after the

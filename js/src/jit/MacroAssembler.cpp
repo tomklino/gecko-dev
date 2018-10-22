@@ -2827,8 +2827,9 @@ MacroAssembler::alignJitStackBasedOnNArgs(Register nargs)
     // aligned if |nargs| is odd.
 
     // if (nargs % 2 == 0) {
-    //     if (sp % JitStackAlignment == 0)
+    //     if (sp % JitStackAlignment == 0) {
     //         sp -= sizeof(Value);
+    //     }
     //     MOZ_ASSERT(sp % JitStackAlignment == JitStackAlignment - sizeof(Value));
     // } else {
     //     sp = sp & ~(JitStackAlignment - 1);
@@ -2972,6 +2973,7 @@ MacroAssembler::subFromStackPtr(Register reg)
 }
 #endif // JS_CODEGEN_ARM64
 
+// clang-format off
 //{{{ check_macroassembler_style
 // ===============================================================
 // Stack manipulation functions.
@@ -3411,8 +3413,15 @@ MacroAssembler::branchIfPretenuredGroup(const ObjectGroup* group, Register scrat
 void
 MacroAssembler::branchIfPretenuredGroup(Register group, Label* label)
 {
+    // To check for the pretenured flag we need OBJECT_FLAG_PRETENURED set, and
+    // OBJECT_FLAG_UNKNOWN_PROPERTIES unset, so check the latter first, and don't
+    // branch if it set.
+    Label unknownProperties;
+    branchTest32(Assembler::NonZero, Address(group, ObjectGroup::offsetOfFlags()),
+                Imm32(OBJECT_FLAG_UNKNOWN_PROPERTIES), &unknownProperties);
     branchTest32(Assembler::NonZero, Address(group, ObjectGroup::offsetOfFlags()),
                  Imm32(OBJECT_FLAG_PRE_TENURE), label);
+    bind(&unknownProperties);
 }
 
 
@@ -3815,6 +3824,7 @@ MacroAssembler::boundsCheck32PowerOfTwo(Register index, uint32_t length, Label* 
 }
 
 //}}} check_macroassembler_style
+// clang-format on
 
 void
 MacroAssembler::memoryBarrierBefore(const Synchronization& sync) {

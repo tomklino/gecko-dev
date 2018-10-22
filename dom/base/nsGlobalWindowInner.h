@@ -96,7 +96,6 @@ class PromiseDocumentFlushedResolver;
 
 namespace mozilla {
 class AbstractThread;
-class ThrottledEventQueue;
 namespace dom {
 class BarProp;
 struct ChannelPixelLayout;
@@ -816,6 +815,19 @@ public:
   {
     return GetScrollY(aError);
   }
+
+  int32_t GetScreenLeft(mozilla::dom::CallerType aCallerType,
+                        mozilla::ErrorResult& aError)
+  {
+    return GetScreenX(aCallerType, aError);
+  }
+
+  int32_t GetScreenTop(mozilla::dom::CallerType aCallerType,
+                       mozilla::ErrorResult& aError)
+  {
+    return GetScreenY(aCallerType, aError);
+  }
+
   void GetScreenX(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
                   mozilla::dom::CallerType aCallerType,
                   mozilla::ErrorResult& aError);
@@ -911,15 +923,6 @@ public:
                     const mozilla::dom::ImageBitmapSource& aImage,
                     int32_t aSx, int32_t aSy, int32_t aSw, int32_t aSh,
                     mozilla::ErrorResult& aRv);
-
-  already_AddRefed<mozilla::dom::Promise>
-  CreateImageBitmap(JSContext* aCx,
-                    const mozilla::dom::ImageBitmapSource& aImage,
-                    int32_t aOffset, int32_t aLength,
-                    mozilla::dom::ImageBitmapFormat aFormat,
-                    const mozilla::dom::Sequence<mozilla::dom::ChannelPixelLayout>& aLayout,
-                    mozilla::ErrorResult& aRv);
-
 
   // ChromeWindow bits.  Do NOT call these unless your window is in
   // fact chrome.
@@ -1083,7 +1086,7 @@ protected:
   // Object Management
   virtual ~nsGlobalWindowInner();
 
-  void FreeInnerObjects();
+  void FreeInnerObjects(bool aForDocumentOpen = false);
 
   // Only to be called on an inner window.
   // aDocument must not be null.

@@ -73,6 +73,7 @@ function sendCustomRequest(connector) {
 
     // Send a new HTTP request using the data in the custom request form
     const data = {
+      cause: selected.cause,
       url: selected.url,
       method: selected.method,
       httpVersion: selected.httpVersion,
@@ -99,13 +100,13 @@ function sendCustomRequest(connector) {
  */
 function removeSelectedCustomRequest() {
   return {
-    type: REMOVE_SELECTED_CUSTOM_REQUEST
+    type: REMOVE_SELECTED_CUSTOM_REQUEST,
   };
 }
 
 function clearRequests() {
   return {
-    type: CLEAR_REQUESTS
+    type: CLEAR_REQUESTS,
   };
 }
 
@@ -114,7 +115,7 @@ function clearRequests() {
  */
 function toggleRecording() {
   return {
-    type: TOGGLE_RECORDING
+    type: TOGGLE_RECORDING,
   };
 }
 

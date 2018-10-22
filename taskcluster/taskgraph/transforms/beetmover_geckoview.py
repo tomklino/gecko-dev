@@ -7,13 +7,13 @@ Transform the beetmover task into an actual task description.
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.beetmover import \
     craft_release_properties as beetmover_craft_release_properties
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
-from taskgraph.util.schema import validate_schema, Schema, resolve_keyed_by, optionally_keyed_by
-from taskgraph.util.scriptworker import (get_phase,
-                                         get_worker_type_for_scope)
+from taskgraph.util.schema import validate_schema, resolve_keyed_by, optionally_keyed_by
+from taskgraph.util.scriptworker import get_worker_type_for_scope
 from taskgraph.transforms.task import task_description_schema
 from voluptuous import Required, Optional
 
@@ -37,8 +37,7 @@ task_description_schema = {str(k): v for k, v in task_description_schema.schema.
 
 transforms = TransformSequence()
 
-beetmover_description_schema = Schema({
-    Required('dependent-task'): object,
+beetmover_description_schema = schema.extend({
     Required('depname', default='build'): basestring,
     Optional('label'): basestring,
     Optional('treeherder'): task_description_schema['treeherder'],
@@ -52,7 +51,7 @@ beetmover_description_schema = Schema({
 @transforms.add
 def validate(config, jobs):
     for job in jobs:
-        label = job.get('dependent-task', object).__dict__.get('label', '?no-label?')
+        label = job.get('primary-dependency', object).__dict__.get('label', '?no-label?')
         validate_schema(
             beetmover_description_schema, job,
             "In beetmover-geckoview ({!r} kind) task for {!r}:".format(config.kind, label))
@@ -62,7 +61,7 @@ def validate(config, jobs):
 @transforms.add
 def make_task_description(config, jobs):
     for job in jobs:
-        dep_job = job['dependent-task']
+        dep_job = job['primary-dependency']
         attributes = dep_job.attributes
 
         treeherder = job.get('treeherder', {})
@@ -104,7 +103,7 @@ def make_task_description(config, jobs):
             'attributes': attributes,
             'run-on-projects': ['mozilla-central'],
             'treeherder': treeherder,
-            'shipping-phase': job.get('shipping-phase', get_phase(config)),
+            'shipping-phase': job['shipping-phase'],
         }
 
         yield task

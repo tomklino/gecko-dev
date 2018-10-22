@@ -284,10 +284,16 @@ GetPropIRGenerator::tryAttachStub()
             if (tryAttachDenseElementHole(obj, objId, index, indexId)) {
                 return true;
             }
+            if (tryAttachSparseElement(obj, objId, index, indexId)) {
+                return true;
+            }
             if (tryAttachUnboxedElementHole(obj, objId, index, indexId)) {
                 return true;
             }
             if (tryAttachArgumentsObjectArg(obj, objId, indexId)) {
+                return true;
+            }
+            if (tryAttachGenericElement(obj, objId, index, indexId)) {
                 return true;
             }
 
@@ -1693,10 +1699,6 @@ GetPropIRGenerator::tryAttachUnboxed(HandleObject obj, ObjOperandId objId, Handl
         return false;
     }
 
-    if (!cx_->runtime()->jitSupportsFloatingPoint) {
-        return false;
-    }
-
     maybeEmitIdGuard(id);
     writer.guardGroupForLayout(objId, obj->group());
     writer.loadUnboxedPropertyResult(objId, property->type,
@@ -1760,7 +1762,7 @@ GetPropIRGenerator::tryAttachTypedObject(HandleObject obj, ObjOperandId objId, H
         return false;
     }
 
-    if (!cx_->runtime()->jitSupportsFloatingPoint || cx_->zone()->detachedTypedObjects) {
+    if (cx_->zone()->detachedTypedObjects) {
         return false;
     }
 
@@ -2214,6 +2216,70 @@ GetPropIRGenerator::tryAttachDenseElementHole(HandleObject obj, ObjOperandId obj
     return true;
 }
 
+bool
+GetPropIRGenerator::tryAttachSparseElement(HandleObject obj, ObjOperandId objId,
+                                           uint32_t index, Int32OperandId indexId)
+{
+    if (!obj->isNative()) {
+        return false;
+    }
+    NativeObject* nobj = &obj->as<NativeObject>();
+
+    // Stub doesn't handle negative indices.
+    if (index > INT_MAX) {
+        return false;
+    }
+
+    // We also need to be past the end of the dense capacity, to ensure sparse.
+    if (index < nobj->getDenseInitializedLength()) {
+        return false;
+    }
+
+    // Only handle Array objects in this stub.
+    if (!nobj->is<ArrayObject>()) {
+        return false;
+    }
+
+    // Here, we ensure that the prototype chain does not define any sparse
+    // indexed properties on the shape lineage. This allows us to guard on
+    // the shapes up the prototype chain to ensure that no indexed properties
+    // exist outside of the dense elements.
+    //
+    // The `GeneratePrototypeHoleGuards` call below will guard on the shapes,
+    // as well as ensure that no prototypes contain dense elements, allowing
+    // us to perform a pure shape-search for out-of-bounds integer-indexed
+    // properties on the recevier object.
+    if ((nobj->staticPrototype() != nullptr) &&
+        ObjectMayHaveExtraIndexedProperties(nobj->staticPrototype()))
+    {
+        return false;
+    }
+
+    // Ensure that obj is an Array.
+    writer.guardClass(objId, GuardClassKind::Array);
+
+    // The helper we are going to call only applies to non-dense elements.
+    writer.guardIndexGreaterThanDenseInitLength(objId, indexId);
+
+    // Ensures we are able to efficiently able to map to an integral jsid.
+    writer.guardIndexIsNonNegative(indexId);
+
+    // Shape guard the prototype chain to avoid shadowing indexes from appearing.
+    // The helper function also ensures that the index does not appear within the
+    // dense element set of the prototypes.
+    GeneratePrototypeHoleGuards(writer, nobj, objId);
+
+    // At this point, we are guaranteed that the indexed property will not
+    // be found on one of the prototypes. We are assured that we only have
+    // to check that the receiving object has the property.
+
+    writer.callGetSparseElementResult(objId, indexId);
+    writer.typeMonitorResult();
+
+    trackAttached("GetSparseElement");
+    return true;
+}
+
 static bool
 IsPrimitiveArrayTypedObject(JSObject* obj)
 {
@@ -2242,24 +2308,11 @@ TypedThingElementType(JSObject* obj)
            : PrimitiveArrayTypedObjectType(obj);
 }
 
-static bool
-TypedThingRequiresFloatingPoint(JSObject* obj)
-{
-    Scalar::Type type = TypedThingElementType(obj);
-    return type == Scalar::Uint32 ||
-           type == Scalar::Float32 ||
-           type == Scalar::Float64;
-}
-
 bool
 GetPropIRGenerator::tryAttachTypedElement(HandleObject obj, ObjOperandId objId,
                                           uint32_t index, Int32OperandId indexId)
 {
     if (!obj->is<TypedArrayObject>() && !IsPrimitiveArrayTypedObject(obj)) {
-        return false;
-    }
-
-    if (!cx_->runtime()->jitSupportsFloatingPoint && TypedThingRequiresFloatingPoint(obj)) {
         return false;
     }
 
@@ -2341,6 +2394,32 @@ GetPropIRGenerator::tryAttachUnboxedElementHole(HandleObject obj, ObjOperandId o
     trackAttached("UnboxedElementHole");
     return true;
 }
+
+bool
+GetPropIRGenerator::tryAttachGenericElement(HandleObject obj, ObjOperandId objId,
+                                            uint32_t index, Int32OperandId indexId)
+{
+    if (!obj->isNative()) {
+        return false;
+    }
+
+    // To allow other types to attach in the non-megamorphic case we test the specific
+    // matching native reciever; however, once megamorphic we can attach for any native
+    if (mode_ == ICState::Mode::Megamorphic) {
+        writer.guardIsNativeObject(objId);
+    } else {
+        NativeObject* nobj = &obj->as<NativeObject>();
+        TestMatchingNativeReceiver(writer, nobj, objId);
+    }
+    writer.guardIndexGreaterThanDenseInitLength(objId, indexId);
+    writer.callNativeGetElementResult(objId, indexId);
+    writer.typeMonitorResult();
+
+    trackAttached(mode_ == ICState::Mode::Megamorphic
+                  ? "GenericElementMegamorphic": "GenericElement");
+    return true;
+}
+
 
 bool
 GetPropIRGenerator::tryAttachProxyElement(HandleObject obj, ObjOperandId objId)
@@ -2854,7 +2933,7 @@ BindNameIRGenerator::trackAttached(const char* name)
 }
 
 HasPropIRGenerator::HasPropIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
-                                       CacheKind cacheKind, ICState::Mode mode,
+                                       ICState::Mode mode, CacheKind cacheKind,
                                        HandleValue idVal, HandleValue val)
   : IRGenerator(cx, script, pc, cacheKind, mode),
     val_(val),
@@ -3296,9 +3375,6 @@ IRGenerator::maybeGuardInt32Index(const Value& index, ValOperandId indexId,
             if (!mozilla::NumberEqualsInt32(index.toDouble(), &indexSigned)) {
                 return false;
             }
-            if (!cx_->runtime()->jitSupportsFloatingPoint) {
-                return false;
-            }
         }
 
         if (indexSigned < 0) {
@@ -3419,6 +3495,9 @@ SetPropIRGenerator::tryAttachStub()
                 return true;
             }
             if (tryAttachSetTypedElement(obj, objId, index, indexId, rhsValId)) {
+                return true;
+            }
+            if (tryAttachAddOrUpdateSparseElement(obj, objId, index, indexId, rhsValId)) {
                 return true;
             }
             return false;
@@ -3584,10 +3663,6 @@ SetPropIRGenerator::tryAttachUnboxedProperty(HandleObject obj, ObjOperandId objI
         return false;
     }
 
-    if (!cx_->runtime()->jitSupportsFloatingPoint) {
-        return false;
-    }
-
     const UnboxedLayout::Property* property = obj->as<UnboxedPlainObject>().layout().lookup(id);
     if (!property) {
         return false;
@@ -3616,7 +3691,7 @@ SetPropIRGenerator::tryAttachTypedObjectProperty(HandleObject obj, ObjOperandId 
         return false;
     }
 
-    if (!cx_->runtime()->jitSupportsFloatingPoint || cx_->zone()->detachedTypedObjects) {
+    if (cx_->zone()->detachedTypedObjects) {
         return false;
     }
 
@@ -3680,6 +3755,7 @@ SetPropIRGenerator::trackAttached(const char* name)
 {
 #ifdef JS_CACHEIR_SPEW
     if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
+        sp.opcodeProperty("op", JSOp(*pc_));
         sp.valueProperty("base", lhsVal_);
         sp.valueProperty("property", idVal_);
         sp.valueProperty("value", rhsVal_);
@@ -3993,8 +4069,9 @@ SetPropIRGenerator::tryAttachSetDenseElementHole(HandleObject obj, ObjOperandId 
     uint32_t initLength = nobj->getDenseInitializedLength();
 
     // Optimize if we're adding an element at initLength or writing to a hole.
-    // Don't handle the adding case if the current accesss is in bounds, to
-    // ensure we always call noteArrayWriteHole.
+    //
+    // In the case where index > initLength, we need noteHasDenseAdd to be called
+    // to ensure Ion is aware that writes have occurred to-out-of-bound indexes before.
     bool isAdd = index == initLength;
     bool isHoleInBounds = index < initLength && !nobj->containsDenseElement(index);
     if (!isAdd && !isHoleInBounds) {
@@ -4037,6 +4114,91 @@ SetPropIRGenerator::tryAttachSetDenseElementHole(HandleObject obj, ObjOperandId 
     return true;
 }
 
+// Add an IC for adding or updating a sparse array element.
+bool
+SetPropIRGenerator::tryAttachAddOrUpdateSparseElement(HandleObject obj, ObjOperandId objId,
+                                                      uint32_t index, Int32OperandId indexId,
+                                                      ValOperandId rhsId)
+{
+    JSOp op = JSOp(*pc_);
+    MOZ_ASSERT(IsPropertySetOp(op) || IsPropertyInitOp(op));
+
+    if (op != JSOP_SETELEM && op != JSOP_STRICTSETELEM) {
+        return false;
+    }
+
+    if (!obj->isNative()) {
+        return false;
+    }
+    NativeObject* nobj = &obj->as<NativeObject>();
+
+    // We cannot attach a stub to a non-extensible object
+    if (!nobj->isExtensible()) {
+        return false;
+    }
+
+    // Stub doesn't handle negative indices.
+    if (index > INT_MAX) {
+        return false;
+    }
+
+    // We also need to be past the end of the dense capacity, to ensure sparse.
+    if (index < nobj->getDenseInitializedLength()) {
+        return false;
+    }
+
+    // Only handle Array objects in this stub.
+    if (!nobj->is<ArrayObject>()) {
+        return false;
+    }
+    ArrayObject* aobj = &nobj->as<ArrayObject>();
+
+    // Don't attach if we're adding to an array with non-writable length.
+    bool isAdd = (index >= aobj->length());
+    if (isAdd && !aobj->lengthIsWritable()) {
+        return false;
+    }
+
+    // Indexed properties on the prototype chain aren't handled by the helper.
+    if ((aobj->staticPrototype() != nullptr) &&
+        ObjectMayHaveExtraIndexedProperties(aobj->staticPrototype()))
+    {
+        return false;
+    }
+
+    // Ensure we are still talking about an array class.
+    writer.guardClass(objId, GuardClassKind::Array);
+
+    // The helper we are going to call only applies to non-dense elements.
+    writer.guardIndexGreaterThanDenseInitLength(objId, indexId);
+
+    // Guard extensible: We may be trying to add a new element, and so we'd best
+    // be able to do so safely.
+    writer.guardIsExtensible(objId);
+
+    // Ensures we are able to efficiently able to map to an integral jsid.
+    writer.guardIndexIsNonNegative(indexId);
+
+    // Shape guard the prototype chain to avoid shadowing indexes from appearing.
+    // Dense elements may appear on the prototype chain (and prototypes may
+    // have a different notion of which elements are dense), but they can
+    // only be data properties, so our specialized Set handler is ok to bind
+    // to them.
+    ShapeGuardProtoChain(writer, obj, objId);
+
+    // Ensure that if we're adding an element to the object, the object's
+    // length is writable.
+    writer.guardIndexIsValidUpdateOrAdd(objId, indexId);
+
+    writer.callAddOrUpdateSparseElementHelper(objId, indexId, rhsId,
+                                              /* strict = */op == JSOP_STRICTSETELEM);
+    writer.returnFromIC();
+
+    trackAttached("AddOrUpdateSparseElement");
+    return true;
+}
+
+
 bool
 SetPropIRGenerator::tryAttachSetTypedElement(HandleObject obj, ObjOperandId objId,
                                              uint32_t index, Int32OperandId indexId,
@@ -4047,10 +4209,6 @@ SetPropIRGenerator::tryAttachSetTypedElement(HandleObject obj, ObjOperandId objI
     }
 
     if (!rhsVal_.isNumber()) {
-        return false;
-    }
-
-    if (!cx_->runtime()->jitSupportsFloatingPoint && TypedThingRequiresFloatingPoint(obj)) {
         return false;
     }
 
@@ -5256,10 +5414,6 @@ CompareIRGenerator::tryAttachInt32(ValOperandId lhsId, ValOperandId rhsId)
 bool
 CompareIRGenerator::tryAttachNumber(ValOperandId lhsId, ValOperandId rhsId)
 {
-    if (!cx_->runtime()->jitSupportsFloatingPoint) {
-        return false;
-    }
-
     if (!lhsVal_.isNumber() || !rhsVal_.isNumber()) {
         return false;
     }
@@ -5587,7 +5741,7 @@ ToBoolIRGenerator::tryAttachInt32()
 bool
 ToBoolIRGenerator::tryAttachDouble()
 {
-    if (!val_.isDouble() || !cx_->runtime()->jitSupportsFloatingPoint) {
+    if (!val_.isDouble()) {
         return false;
     }
 
@@ -5749,7 +5903,7 @@ UnaryArithIRGenerator::tryAttachInt32()
 bool
 UnaryArithIRGenerator::tryAttachNumber()
 {
-    if (!val_.isNumber() || !res_.isNumber() || !cx_->runtime()->jitSupportsFloatingPoint) {
+    if (!val_.isNumber() || !res_.isNumber()) {
         return false;
     }
 
@@ -5825,8 +5979,9 @@ BinaryArithIRGenerator::tryAttachStub()
         return true;
     }
 
-    if (tryAttachStringNumberConcat())
+    if (tryAttachStringNumberConcat()) {
         return true;
+    }
 
 
     trackAttached(IRGenerator::NotAttached);
@@ -5918,10 +6073,6 @@ BinaryArithIRGenerator::tryAttachDouble()
 
     // Check guard conditions
     if (!lhs_.isNumber() || !rhs_.isNumber()) {
-        return false;
-    }
-
-    if (!cx_->runtime()->jitSupportsFloatingPoint) {
         return false;
     }
 
@@ -6029,8 +6180,9 @@ bool
 BinaryArithIRGenerator::tryAttachStringNumberConcat()
 {
     // Only Addition
-    if (op_ != JSOP_ADD)
+    if (op_ != JSOP_ADD) {
         return false;
+    }
 
     if (!(lhs_.isString() && rhs_.isNumber()) &&
         !(lhs_.isNumber() && rhs_.isString()))

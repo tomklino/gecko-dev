@@ -24,7 +24,6 @@ exports.initPanelInTab = async function({ tool, tab }) {
   dump(`Initializing a ${tool} panel.\n`);
 
   const target = await TargetFactory.forTab(tab);
-  await target.attach();
 
   // Open a toolbox and wait for the connection to the performance actors
   // to be opened. This is necessary because of the WebConsole's
@@ -50,7 +49,7 @@ exports.initPerformanceInNewTab = async function({ url, win }, options = {}) {
 exports.initPerformanceInTab = async function({ tab }) {
   return exports.initPanelInTab({
     tool: "performance",
-    tab: tab
+    tab: tab,
   });
 };
 
@@ -70,7 +69,7 @@ exports.initConsoleInNewTab = async function({ url, win }, options = {}) {
 exports.initConsoleInTab = async function({ tab }) {
   const { target, toolbox, panel } = await exports.initPanelInTab({
     tool: "webconsole",
-    tab: tab
+    tab: tab,
   });
 
   const consoleMethod = async function(method, label, event) {

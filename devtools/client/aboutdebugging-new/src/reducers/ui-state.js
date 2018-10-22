@@ -5,21 +5,31 @@
 "use strict";
 
 const {
+  ADB_ADDON_STATUS_UPDATED,
   DEBUG_TARGET_COLLAPSIBILITY_UPDATED,
   NETWORK_LOCATIONS_UPDATED,
   PAGE_SELECTED,
 } = require("../constants");
 
-function UiState(locations = [], debugTargetCollapsibilities = {}) {
+function UiState(locations = [], debugTargetCollapsibilities = {},
+                 networkEnabled = false, wifiEnabled = false) {
   return {
+    adbAddonStatus: null,
     debugTargetCollapsibilities,
+    networkEnabled,
     networkLocations: locations,
     selectedPage: null,
+    wifiEnabled,
   };
 }
 
 function uiReducer(state = UiState(), action) {
   switch (action.type) {
+    case ADB_ADDON_STATUS_UPDATED: {
+      const { adbAddonStatus } = action;
+      return Object.assign({}, state, { adbAddonStatus });
+    }
+
     case DEBUG_TARGET_COLLAPSIBILITY_UPDATED: {
       const { isCollapsed, key } = action;
       const debugTargetCollapsibilities = new Map(state.debugTargetCollapsibilities);

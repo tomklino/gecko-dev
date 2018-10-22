@@ -162,6 +162,41 @@ protected:
   HTMLEditor* mHTMLEditor;
 };
 
+
+class MOZ_RAII AutoSetTemporaryAncestorLimiter final
+{
+  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER;
+
+public:
+  explicit AutoSetTemporaryAncestorLimiter(HTMLEditor& aHTMLEditor,
+                                           Selection& aSelection,
+                                           nsINode& aStartPointNode
+                                           MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  {
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+
+    if (aSelection.GetAncestorLimiter()) {
+      return;
+    }
+
+    Element* root = aHTMLEditor.FindSelectionRoot(&aStartPointNode);
+    if (root) {
+      aHTMLEditor.InitializeSelectionAncestorLimit(aSelection, *root);
+      mSelection = &aSelection;
+    }
+  }
+
+  ~AutoSetTemporaryAncestorLimiter()
+  {
+    if (mSelection) {
+      mSelection->SetAncestorLimiter(nullptr);
+    }
+  }
+
+private:
+  RefPtr<Selection> mSelection;
+};
+
 /********************************************************
  * mozilla::HTMLEditRules
  ********************************************************/
@@ -2405,6 +2440,13 @@ HTMLEditRules::WillDeleteSelection(nsIEditor::EDirection aAction,
       return NS_OK;
     }
 
+    // ExtendSelectionForDelete will use selection controller to set
+    // selection for delete.  But if focus event doesn't receive yet,
+    // ancestor isn't set.  So we must set root eleement of editor to
+    // ancestor.
+    AutoSetTemporaryAncestorLimiter autoSetter(HTMLEditorRef(), SelectionRef(),
+                                               *startPoint.GetContainer());
+
     rv = HTMLEditorRef().ExtendSelectionForDelete(&SelectionRef(), &aAction);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -3980,7 +4022,7 @@ HTMLEditRules::MakeList(nsAtom& aListType,
                         bool* aCancel,
                         nsAtom& aItemType)
 {
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
   nsTArray<OwningNonNull<nsINode>> arrayOfNodes;
   nsresult rv =
@@ -4065,7 +4107,7 @@ HTMLEditRules::MakeList(nsAtom& aListType,
     // remember our new block for postprocessing
     mNewBlock = theListItem;
     // Put selection in new list item and don't restore the Selection.
-    selectionRestorer.Abort();
+    restoreSelectionLater.Abort();
     ErrorResult error;
     SelectionRef().Collapse(EditorRawDOMPoint(theListItem, 0), error);
     if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -4395,7 +4437,7 @@ HTMLEditRules::WillRemoveList(bool* aCancel,
     return rv;
   }
 
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
   nsTArray<RefPtr<nsRange>> arrayOfRanges;
   GetPromotedRanges(arrayOfRanges, EditSubAction::eCreateOrChangeList);
@@ -4499,7 +4541,7 @@ HTMLEditRules::MakeBasicBlock(nsAtom& blockType)
     return rv;
   }
 
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
   AutoTransactionsConserveSelection dontChangeMySelection(HTMLEditorRef());
 
   // Contruct a list of nodes to act on.
@@ -4570,7 +4612,7 @@ HTMLEditRules::MakeBasicBlock(nsAtom& blockType)
       // Put selection at the split point
       EditorRawDOMPoint atBrNode(brContent);
       // Don't restore the selection
-      selectionRestorer.Abort();
+      restoreSelectionLater.Abort();
       ErrorResult error;
       SelectionRef().Collapse(atBrNode, error);
       if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -4629,7 +4671,7 @@ HTMLEditRules::MakeBasicBlock(nsAtom& blockType)
       arrayOfNodes.RemoveElementAt(0);
     }
     // Don't restore the selection
-    selectionRestorer.Abort();
+    restoreSelectionLater.Abort();
     // Put selection in new block
     rv = SelectionRef().Collapse(block, 0);
     if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -4751,7 +4793,7 @@ HTMLEditRules::IndentAroundSelectionWithCSS()
 {
   MOZ_ASSERT(IsEditorDataAvailable());
 
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
   nsTArray<OwningNonNull<nsRange>> arrayOfRanges;
   nsTArray<OwningNonNull<nsINode>> arrayOfNodes;
 
@@ -4838,7 +4880,7 @@ HTMLEditRules::IndentAroundSelectionWithCSS()
     // put selection in new block
     EditorRawDOMPoint atStartOfTheBlock(theBlock, 0);
     // Don't restore the selection
-    selectionRestorer.Abort();
+    restoreSelectionLater.Abort();
     ErrorResult error;
     SelectionRef().Collapse(atStartOfTheBlock, error);
     if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -5055,7 +5097,7 @@ HTMLEditRules::IndentAroundSelectionWithHTML()
 {
   MOZ_ASSERT(IsEditorDataAvailable());
 
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
   // convert the selection ranges into "promoted" selection ranges:
   // this basically just expands the range to include the immediate
@@ -5118,7 +5160,7 @@ HTMLEditRules::IndentAroundSelectionWithHTML()
     }
     EditorRawDOMPoint atStartOfTheBlock(theBlock, 0);
     // Don't restore the selection
-    selectionRestorer.Abort();
+    restoreSelectionLater.Abort();
     ErrorResult error;
     SelectionRef().Collapse(atStartOfTheBlock, error);
     if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -5435,7 +5477,7 @@ HTMLEditRules::OutdentAroundSelection()
 {
   MOZ_ASSERT(IsEditorDataAvailable());
 
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
   bool useCSS = HTMLEditorRef().IsCSSEnabled();
 
@@ -6075,7 +6117,7 @@ HTMLEditRules::WillAlign(const nsAString& aAlignType,
 nsresult
 HTMLEditRules::AlignContentsAtSelection(const nsAString& aAlignType)
 {
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
   // Convert the selection ranges into "promoted" selection ranges: This
   // basically just expands the range to include the immediate block parent,
@@ -6203,7 +6245,7 @@ HTMLEditRules::AlignContentsAtSelection(const nsAString& aAlignType)
     }
     EditorRawDOMPoint atStartOfDiv(div, 0);
     // Don't restore the selection
-    selectionRestorer.Abort();
+    restoreSelectionLater.Abort();
     ErrorResult error;
     SelectionRef().Collapse(atStartOfDiv, error);
     if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -10956,7 +10998,7 @@ HTMLEditRules::PrepareToMakeElementAbsolutePosition(
   MOZ_ASSERT(aHandled);
   MOZ_ASSERT(aTargetElement);
 
-  AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+  AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
   // Convert the selection ranges into "promoted" selection ranges: this
   // basically just expands the range to include the immediate block parent,
@@ -11020,7 +11062,7 @@ HTMLEditRules::PrepareToMakeElementAbsolutePosition(
     // Put selection in new block
     *aHandled = true;
     // Don't restore the selection
-    selectionRestorer.Abort();
+    restoreSelectionLater.Abort();
     ErrorResult error;
     SelectionRef().Collapse(RawRangeBoundary(positionedDiv, 0), error);
     if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -11261,7 +11303,7 @@ HTMLEditRules::WillRemoveAbsolutePosition(bool* aCancel,
   }
 
   {
-    AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+    AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
     nsresult rv = HTMLEditorRef().SetPositionToAbsoluteOrStatic(*element, false);
     if (NS_WARN_IF(!CanHandleEditAction())) {
@@ -11307,7 +11349,7 @@ HTMLEditRules::WillRelativeChangeZIndex(int32_t aChange,
   }
 
   {
-    AutoSelectionRestorer selectionRestorer(&SelectionRef(), &HTMLEditorRef());
+    AutoSelectionRestorer restoreSelectionLater(SelectionRef(), HTMLEditorRef());
 
     int32_t zIndex;
     nsresult rv = HTMLEditorRef().RelativeChangeElementZIndex(*element, aChange,

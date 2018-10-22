@@ -10,6 +10,8 @@ exports.getNewSelectedSourceId = getNewSelectedSourceId;
 
 var _reselect = require("devtools/client/debugger/new/dist/vendors").vendored["reselect"];
 
+var _devtoolsSourceMap = require("devtools/client/shared/source-map/index.js");
+
 var _lodashMove = require("devtools/client/debugger/new/dist/vendors").vendored["lodash-move"];
 
 var _lodashMove2 = _interopRequireDefault(_lodashMove);
@@ -28,7 +30,11 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
  * Tabs reducer
  * @module reducers/tabs
  */
-function update(state = _prefs.prefs.tabs || [], action) {
+function isSimilarTab(tab, url, isOriginal) {
+  return tab.url === url && tab.isOriginal === isOriginal;
+}
+
+function update(state = [], action) {
   switch (action.type) {
     case "ADD_TAB":
     case "UPDATE_TAB":
@@ -39,7 +45,7 @@ function update(state = _prefs.prefs.tabs || [], action) {
 
     case "CLOSE_TAB":
     case "CLOSE_TABS":
-      _prefs.prefs.tabs = action.tabs;
+      _prefs.asyncStore.tabs = action.tabs;
       return action.tabs;
 
     default:
@@ -47,12 +53,12 @@ function update(state = _prefs.prefs.tabs || [], action) {
   }
 }
 
-function removeSourceFromTabList(tabs, url) {
-  return tabs.filter(tab => tab.url !== url);
+function removeSourceFromTabList(tabs, source) {
+  return tabs.filter(tab => tab.url !== source.url || tab.isOriginal != (0, _devtoolsSourceMap.isOriginalId)(source.id));
 }
 
-function removeSourcesFromTabList(tabs, urls) {
-  return urls.reduce((t, url) => removeSourceFromTabList(t, url), tabs);
+function removeSourcesFromTabList(tabs, sources) {
+  return sources.reduce((t, source) => removeSourceFromTabList(t, source), tabs);
 }
 /**
  * Adds the new source to the tab list if it is not already there
@@ -63,21 +69,36 @@ function removeSourcesFromTabList(tabs, urls) {
 
 function updateTabList(tabs, {
   url,
-  framework = null
+  framework = null,
+  sourceId,
+  isOriginal = false
 }) {
-  const currentIndex = tabs.findIndex(tab => tab.url == url);
+  // Set currentIndex to -1 for URL-less tabs so that they aren't
+  // filtered by isSimilarTab
+  const currentIndex = url ? tabs.findIndex(tab => isSimilarTab(tab, url, isOriginal)) : -1;
 
   if (currentIndex === -1) {
     tabs = [{
       url,
-      framework
+      framework,
+      sourceId,
+      isOriginal
     }, ...tabs];
   } else if (framework) {
     tabs[currentIndex].framework = framework;
   }
 
-  _prefs.prefs.tabs = tabs;
+  _prefs.asyncStore.tabs = persistTabs(tabs);
   return tabs;
+}
+
+function persistTabs(tabs) {
+  return tabs.filter(tab => tab.url).map(tab => {
+    const newTab = { ...tab
+    };
+    delete newTab.sourceId;
+    return newTab;
+  });
 }
 
 function moveTabInList(tabs, {
@@ -86,7 +107,7 @@ function moveTabInList(tabs, {
 }) {
   const currentIndex = tabs.findIndex(tab => tab.url == url);
   tabs = (0, _lodashMove2.default)(tabs, currentIndex, newIndex);
-  _prefs.prefs.tabs = tabs;
+  _prefs.asyncStore.tabs = tabs;
   return tabs;
 }
 /**
@@ -113,7 +134,7 @@ function getNewSelectedSourceId(state, availableTabs) {
     return "";
   }
 
-  const matchingTab = availableTabs.find(tab => tab.url == selectedTab.url);
+  const matchingTab = availableTabs.find(tab => isSimilarTab(tab, selectedTab.url, (0, _devtoolsSourceMap.isOriginalId)(selectedLocation.sourceId)));
 
   if (matchingTab) {
     const sources = state.sources.sources;
@@ -122,7 +143,7 @@ function getNewSelectedSourceId(state, availableTabs) {
       return "";
     }
 
-    const selectedSource = (0, _sources.getSourceByURL)(state, selectedTab.url);
+    const selectedSource = (0, _sources.getSpecificSourceByURL)(state, selectedTab.url, (0, _devtoolsSourceMap.isOriginalId)(selectedTab.id));
 
     if (selectedSource) {
       return selectedSource.id;
@@ -138,7 +159,7 @@ function getNewSelectedSourceId(state, availableTabs) {
   const availableTab = availableTabs[newSelectedTabIndex];
 
   if (availableTab) {
-    const tabSource = (0, _sources.getSourceByUrlInSources)((0, _sources.getSources)(state), (0, _sources.getUrls)(state), availableTab.url);
+    const tabSource = (0, _sources.getSpecificSourceByUrlInSources)((0, _sources.getSources)(state), (0, _sources.getUrls)(state), availableTab.url, availableTab.isOriginal);
 
     if (tabSource) {
       return tabSource.id;
@@ -158,8 +179,15 @@ function getNewSelectedSourceId(state, availableTabs) {
 
 const getTabs = exports.getTabs = state => state.tabs;
 
-const getSourceTabs = exports.getSourceTabs = (0, _reselect.createSelector)(getTabs, _sources.getSources, _sources.getUrls, (tabs, sources, urls) => tabs.filter(tab => (0, _sources.getSourceByUrlInSources)(sources, urls, tab.url)));
-const getSourcesForTabs = exports.getSourcesForTabs = (0, _reselect.createSelector)(getSourceTabs, _sources.getSources, _sources.getUrls, (tabs, sources, urls) => {
-  return tabs.map(tab => (0, _sources.getSourceByUrlInSources)(sources, urls, tab.url)).filter(source => source);
-});
+const getSourceTabs = exports.getSourceTabs = (0, _reselect.createSelector)(getTabs, _sources.getSources, _sources.getUrls, (tabs, sources, urls) => tabs.filter(tab => getTabWithOrWithoutUrl(tab, sources, urls)));
+const getSourcesForTabs = exports.getSourcesForTabs = (0, _reselect.createSelector)(getSourceTabs, _sources.getSources, _sources.getUrls, (tabs, sources, urls) => tabs.map(tab => getTabWithOrWithoutUrl(tab, sources, urls)).filter(Boolean));
+
+function getTabWithOrWithoutUrl(tab, sources, urls) {
+  if (tab.url) {
+    return (0, _sources.getSpecificSourceByUrlInSources)(sources, urls, tab.url, tab.isOriginal);
+  }
+
+  return tab.sourceId ? sources[tab.sourceId] : null;
+}
+
 exports.default = update;

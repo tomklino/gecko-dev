@@ -185,9 +185,9 @@ protected:
   void DispatchMessageManagerMessage(const nsAString& aMessageName,
                                      const nsAString& aJSONData);
 
-  void ProcessUpdateFrame(const mozilla::layers::FrameMetrics& aFrameMetrics);
+  void ProcessUpdateFrame(const mozilla::layers::RepaintRequest& aRequest);
 
-  bool UpdateFrameHandler(const mozilla::layers::FrameMetrics& aFrameMetrics);
+  bool UpdateFrameHandler(const mozilla::layers::RepaintRequest& aRequest);
 
 protected:
   RefPtr<TabChildMessageManager> mTabChildMessageManager;
@@ -540,6 +540,7 @@ public:
 
   void ClearCachedResources();
   void InvalidateLayers();
+  void SchedulePaint();
   void ReinitRendering();
   void ReinitRenderingForDeviceReset();
 
@@ -634,7 +635,7 @@ public:
   void SetAllowedTouchBehavior(uint64_t aInputBlockId,
                                const nsTArray<TouchBehaviorFlags>& aFlags) const;
 
-  bool UpdateFrame(const FrameMetrics& aFrameMetrics);
+  bool UpdateFrame(const layers::RepaintRequest& aRequest);
   bool NotifyAPZStateChange(const ViewID& aViewId,
                             const layers::GeckoContentController::APZStateChange& aChange,
                             const int& aArg);
@@ -722,6 +723,10 @@ protected:
   virtual mozilla::ipc::IPCResult RecvSetDocShellIsActive(const bool& aIsActive) override;
 
   virtual mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled, const bool& aForce, const layers::LayersObserverEpoch& aEpoch) override;
+
+  virtual mozilla::ipc::IPCResult RecvRequestRootPaint(const IntRect& aRect, const float& aScale, const nscolor& aBackgroundColor, RequestRootPaintResolver&& aResolve) override;
+
+  virtual mozilla::ipc::IPCResult RecvRequestSubPaint(const float& aScale, const nscolor& aBackgroundColor, RequestSubPaintResolver&& aResolve) override;
 
   virtual mozilla::ipc::IPCResult RecvNavigateByKey(const bool& aForward,
                                                     const bool& aForDocumentNavigation) override;

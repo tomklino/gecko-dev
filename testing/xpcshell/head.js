@@ -141,7 +141,7 @@ try {
     observe(msg) {
       if (typeof info === "function")
         info("CONSOLE_MESSAGE: (" + levelNames[msg.logLevel] + ") " + msg.toString());
-    }
+    },
   };
   // Don't use _Services.console here as it causes one of the devtools tests
   // to fail, probably due to initializing Services.console too early.
@@ -201,7 +201,7 @@ _Timer.prototype = {
     // undershoots.
     var newDelay = this._delay - elapsed;
     do_timeout(newDelay, this._func);
-  }
+  },
 };
 
 function _isGenerator(val) {
@@ -305,7 +305,7 @@ var _fakeIdleService = {
       return this;
     }
     throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
-  }
+  },
 };
 
 /**
@@ -586,7 +586,7 @@ function _execute_test() {
     _testLogger.error(_exception_message(ex),
                       {
                         stack: _format_stack(stack),
-                        source_file: filename
+                        source_file: filename,
                       });
   };
 
@@ -641,7 +641,7 @@ function _load_files(aFiles) {
       load(element);
     } catch (e) {
       let extra = {
-        source_file: element
+        source_file: element,
       };
       if (e.stack) {
         extra.stack = _format_stack(e.stack);
@@ -709,7 +709,7 @@ function executeSoon(callback, aName) {
       } finally {
         do_test_finished(funcName);
       }
-    }
+    },
   });
 }
 
@@ -734,7 +734,7 @@ function do_throw(error, stack) {
   _testLogger.error(_exception_message(error),
                     {
                       source_file: filename,
-                      stack: _format_stack(stack)
+                      stack: _format_stack(stack),
                     });
   _abort_failed_test();
 }
@@ -791,7 +791,7 @@ function do_report_unexpected_exception(ex, text) {
   _testLogger.error(text + "Unexpected exception " + _exception_message(ex),
                     {
                       source_file: filename,
-                      stack: _format_stack(ex.stack)
+                      stack: _format_stack(ex.stack),
                     });
   _do_quit();
   throw Components.Exception("", Cr.NS_ERROR_ABORT);
@@ -802,7 +802,7 @@ function do_note_exception(ex, text) {
   _testLogger.info(text + "Swallowed exception " + _exception_message(ex),
                    {
                      source_file: filename,
-                     stack: _format_stack(ex.stack)
+                     stack: _format_stack(ex.stack),
                    });
 }
 
@@ -1267,7 +1267,7 @@ function do_await_remote_message(name, optionalCallback) {
             do_test_finished();
           }
         }
-      }
+      },
     };
 
     var mm;
@@ -1411,7 +1411,7 @@ function run_next_test() {
       // Check for uncaught rejections as early and often as possible.
       _PromiseTestUtils.assertNoUncaughtRejections();
       let _properties;
-      [_properties, _gRunningTest, ] = _gTests[_gTestIndex++];
+      [_properties, _gRunningTest ] = _gTests[_gTestIndex++];
 
       // Must set to pending before we check for skip, so that we keep the
       // running counts correct.
@@ -1477,15 +1477,13 @@ function run_next_test() {
 }
 
 try {
+  // Set global preferences
   if (runningInParent) {
     // Always use network provider for geolocation tests
     // so we bypass the OSX dialog raised by the corelocation provider
     _Services.prefs.setBoolPref("geo.provider.testing", true);
-  }
-} catch (e) { }
-// We need to avoid hitting the network with certain components.
-try {
-  if (runningInParent) {
+
+    // We need to avoid hitting the network with certain components.
     _Services.prefs.setCharPref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
     _Services.prefs.setCharPref("media.gmp-manager.updateEnabled", false);
     _Services.prefs.setCharPref("extensions.systemAddon.update.url", "http://%(server)s/dummy-system-addons.xml");
@@ -1493,17 +1491,15 @@ try {
     _Services.prefs.setCharPref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy");
     _Services.prefs.setCharPref("browser.search.geoip.url", "https://%(server)s/geoip-dummy");
     _Services.prefs.setCharPref("browser.safebrowsing.downloads.remote.url", "https://%(server)s/safebrowsing-dummy");
-  }
-} catch (e) { }
 
-// Make tests run consistently on DevEdition (which has a lightweight theme
-// selected by default).
-try {
-  if (runningInParent) {
+    // Make tests run consistently on DevEdition (which has a lightweight theme
+    // selected by default).
     _Services.prefs.deleteBranch("lightweightThemes.selectedThemeID");
     _Services.prefs.deleteBranch("browser.devedition.theme.enabled");
   }
-} catch (e) { }
+} catch (e) {
+  do_throw(e);
+}
 
 function _load_mozinfo() {
   let mozinfoFile = Cc["@mozilla.org/file/local;1"]
@@ -1524,8 +1520,8 @@ Object.defineProperty(this, "mozinfo", {
     let _mozinfo = _load_mozinfo();
     Object.defineProperty(this, "mozinfo", {
       configurable: false,
-      value: _mozinfo
+      value: _mozinfo,
     });
     return _mozinfo;
-  }
+  },
 });

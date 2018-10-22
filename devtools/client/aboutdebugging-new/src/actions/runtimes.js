@@ -4,26 +4,34 @@
 
 "use strict";
 
+const { ADB } = require("devtools/shared/adb/adb");
 const { DebuggerClient } = require("devtools/shared/client/debugger-client");
 const { DebuggerServer } = require("devtools/server/main");
 
 const Actions = require("./index");
 
 const {
+  getCurrentRuntime,
   findRuntimeById,
 } = require("../modules/runtimes-state-helper");
+const { isSupportedDebugTarget } = require("../modules/debug-target-support");
 
 const {
   CONNECT_RUNTIME_FAILURE,
   CONNECT_RUNTIME_START,
   CONNECT_RUNTIME_SUCCESS,
+  DEBUG_TARGETS,
   DISCONNECT_RUNTIME_FAILURE,
   DISCONNECT_RUNTIME_START,
   DISCONNECT_RUNTIME_SUCCESS,
+  RUNTIME_PREFERENCE,
   RUNTIMES,
   UNWATCH_RUNTIME_FAILURE,
   UNWATCH_RUNTIME_START,
   UNWATCH_RUNTIME_SUCCESS,
+  UPDATE_CONNECTION_PROMPT_SETTING_FAILURE,
+  UPDATE_CONNECTION_PROMPT_SETTING_START,
+  UPDATE_CONNECTION_PROMPT_SETTING_SUCCESS,
   USB_RUNTIMES_UPDATED,
   WATCH_RUNTIME_FAILURE,
   WATCH_RUNTIME_START,
@@ -35,25 +43,54 @@ async function createLocalClient() {
   DebuggerServer.registerAllActors();
   const client = new DebuggerClient(DebuggerServer.connectPipe());
   await client.connect();
-  return client;
+  return { client };
 }
 
 async function createNetworkClient(host, port) {
-  const transport = await DebuggerClient.socketConnect({ host, port });
+  const transportDetails = { host, port };
+  const transport = await DebuggerClient.socketConnect(transportDetails);
   const client = new DebuggerClient(transport);
   await client.connect();
-  return client;
+  return { client, transportDetails };
 }
 
-async function createClientForRuntime(id, type) {
+async function createUSBClient(socketPath) {
+  const port = await ADB.prepareTCPConnection(socketPath);
+  return createNetworkClient("localhost", port);
+}
+
+async function createClientForRuntime(runtime) {
+  const { extra, type } = runtime;
+
   if (type === RUNTIMES.THIS_FIREFOX) {
     return createLocalClient();
   } else if (type === RUNTIMES.NETWORK) {
-    const [host, port] = id.split(":");
+    const { host, port } = extra.connectionParameters;
     return createNetworkClient(host, port);
+  } else if (type === RUNTIMES.USB) {
+    const { socketPath } = extra.connectionParameters;
+    return createUSBClient(socketPath);
   }
 
   return null;
+}
+
+async function getRuntimeInfo(runtime, client) {
+  const { extra, type } = runtime;
+  const deviceFront = await client.mainRoot.getFront("device");
+  const { brandName: name, channel, version } = await deviceFront.getDescription();
+  const icon =
+    (channel === "release" || channel === "beta" || channel === "aurora")
+      ? `chrome://devtools/skin/images/aboutdebugging-firefox-${ channel }.svg`
+      : "chrome://devtools/skin/images/aboutdebugging-firefox-nightly.svg";
+
+  return {
+    icon,
+    deviceName: extra ? extra.deviceName : undefined,
+    name,
+    type,
+    version,
+  };
 }
 
 function connectRuntime(id) {
@@ -61,18 +98,23 @@ function connectRuntime(id) {
     dispatch({ type: CONNECT_RUNTIME_START });
     try {
       const runtime = findRuntimeById(id, getState().runtimes);
-      const client = await createClientForRuntime(id, runtime.type);
+      const { client, transportDetails } = await createClientForRuntime(runtime);
+      const info = await getRuntimeInfo(runtime, client);
+      const preferenceFront = await client.mainRoot.getFront("preference");
+      const connectionPromptEnabled =
+        await preferenceFront.getBoolPref(RUNTIME_PREFERENCE.CONNECTION_PROMPT);
+      const runtimeDetails = { connectionPromptEnabled, client, info, transportDetails };
 
       dispatch({
         type: CONNECT_RUNTIME_SUCCESS,
         runtime: {
           id,
-          client,
+          runtimeDetails,
           type: runtime.type,
-        }
+        },
       });
     } catch (e) {
-      dispatch({ type: CONNECT_RUNTIME_FAILURE, error: e.message });
+      dispatch({ type: CONNECT_RUNTIME_FAILURE, error: e });
     }
   };
 }
@@ -82,7 +124,7 @@ function disconnectRuntime(id) {
     dispatch({ type: DISCONNECT_RUNTIME_START });
     try {
       const runtime = findRuntimeById(id, getState().runtimes);
-      const client = runtime.client;
+      const client = runtime.runtimeDetails.client;
 
       await client.close();
       DebuggerServer.destroy();
@@ -92,10 +134,31 @@ function disconnectRuntime(id) {
         runtime: {
           id,
           type: runtime.type,
-        }
+        },
       });
     } catch (e) {
-      dispatch({ type: DISCONNECT_RUNTIME_FAILURE, error: e.message });
+      dispatch({ type: DISCONNECT_RUNTIME_FAILURE, error: e });
+    }
+  };
+}
+
+function updateConnectionPromptSetting(connectionPromptEnabled) {
+  return async (dispatch, getState) => {
+    dispatch({ type: UPDATE_CONNECTION_PROMPT_SETTING_START });
+    try {
+      const runtime = getCurrentRuntime(getState().runtimes);
+      const client = runtime.runtimeDetails.client;
+      const preferenceFront = await client.mainRoot.getFront("preference");
+      await preferenceFront.setBoolPref(RUNTIME_PREFERENCE.CONNECTION_PROMPT,
+                                        connectionPromptEnabled);
+      // Re-get actual value from the runtime.
+      connectionPromptEnabled =
+        await preferenceFront.getBoolPref(RUNTIME_PREFERENCE.CONNECTION_PROMPT);
+
+      dispatch({ type: UPDATE_CONNECTION_PROMPT_SETTING_SUCCESS,
+                 runtime, connectionPromptEnabled });
+    } catch (e) {
+      dispatch({ type: UPDATE_CONNECTION_PROMPT_SETTING_FAILURE, error: e });
     }
   };
 }
@@ -114,11 +177,19 @@ function watchRuntime(id) {
       const runtime = findRuntimeById(id, getState().runtimes);
       await dispatch({ type: WATCH_RUNTIME_SUCCESS, runtime });
 
-      dispatch(Actions.requestExtensions());
-      dispatch(Actions.requestTabs());
-      dispatch(Actions.requestWorkers());
+      if (isSupportedDebugTarget(runtime.type, DEBUG_TARGETS.EXTENSION)) {
+        dispatch(Actions.requestExtensions());
+      }
+
+      if (isSupportedDebugTarget(runtime.type, DEBUG_TARGETS.TAB)) {
+        dispatch(Actions.requestTabs());
+      }
+
+      if (isSupportedDebugTarget(runtime.type, DEBUG_TARGETS.WORKER)) {
+        dispatch(Actions.requestWorkers());
+      }
     } catch (e) {
-      dispatch({ type: WATCH_RUNTIME_FAILURE, error: e.message });
+      dispatch({ type: WATCH_RUNTIME_FAILURE, error: e });
     }
   };
 }
@@ -137,19 +208,39 @@ function unwatchRuntime(id) {
 
       dispatch({ type: UNWATCH_RUNTIME_SUCCESS });
     } catch (e) {
-      dispatch({ type: UNWATCH_RUNTIME_FAILURE, error: e.message });
+      dispatch({ type: UNWATCH_RUNTIME_FAILURE, error: e });
     }
   };
 }
 
 function updateUSBRuntimes(runtimes) {
-  return { type: USB_RUNTIMES_UPDATED, runtimes };
+  return async (dispatch, getState) => {
+    const currentRuntime = getCurrentRuntime(getState().runtimes);
+
+    if (currentRuntime &&
+        currentRuntime.type === RUNTIMES.USB &&
+        !runtimes.find(runtime => currentRuntime.id === runtime.id)) {
+      // Since current USB runtime was invalid, move to this firefox page.
+      // This case is considered as followings and so on:
+      // * Remove ADB addon
+      // * (Physically) Disconnect USB runtime
+      //
+      // The reason why we call selectPage before USB_RUNTIMES_UPDATED was fired is below.
+      // Current runtime can not be retrieved after USB_RUNTIMES_UPDATED action, since
+      // that updates runtime state. So, before that we fire selectPage action so that to
+      // transact unwatchRuntime correctly.
+      await dispatch(Actions.selectPage(RUNTIMES.THIS_FIREFOX, RUNTIMES.THIS_FIREFOX));
+    }
+
+    dispatch({ type: USB_RUNTIMES_UPDATED, runtimes });
+  };
 }
 
 module.exports = {
   connectRuntime,
   disconnectRuntime,
   unwatchRuntime,
+  updateConnectionPromptSetting,
   updateUSBRuntimes,
   watchRuntime,
 };

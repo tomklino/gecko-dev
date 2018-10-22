@@ -72,7 +72,7 @@ var openInspectorSidebarTab = async function(id) {
   return {
     toolbox,
     inspector,
-    testActor
+    testActor,
   };
 };
 
@@ -146,8 +146,9 @@ function openLayoutView() {
       inspector: data.inspector,
       boxmodel: data.inspector.getPanel("boxmodel"),
       gridInspector: data.inspector.layoutview.gridInspector,
+      flexboxInspector: data.inspector.layoutview.flexboxInspector,
       layoutView: data.inspector.layoutview,
-      testActor: data.testActor
+      testActor: data.testActor,
     };
   });
 }

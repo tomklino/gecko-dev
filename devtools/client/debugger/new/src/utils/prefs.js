@@ -20,7 +20,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-const prefsSchemaVersion = "1.0.4";
+const prefsSchemaVersion = "1.0.5";
 const pref = _devtoolsServices2.default.pref;
 
 if ((0, _devtoolsEnvironment.isDevelopment)()) {
@@ -55,20 +55,20 @@ if ((0, _devtoolsEnvironment.isDevelopment)()) {
   pref("devtools.debugger.features.wasm", true);
   pref("devtools.debugger.features.shortcuts", true);
   pref("devtools.debugger.features.root", true);
-  pref("devtools.debugger.features.column-breakpoints", false);
   pref("devtools.debugger.features.map-scopes", true);
   pref("devtools.debugger.features.remove-command-bar-options", true);
   pref("devtools.debugger.features.code-coverage", false);
   pref("devtools.debugger.features.event-listeners", false);
   pref("devtools.debugger.features.code-folding", false);
   pref("devtools.debugger.features.outline", true);
-  pref("devtools.debugger.features.column-breakpoints", true);
+  pref("devtools.debugger.features.column-breakpoints", false);
   pref("devtools.debugger.features.pause-points", true);
   pref("devtools.debugger.features.skip-pausing", true);
   pref("devtools.debugger.features.component-pane", false);
   pref("devtools.debugger.features.autocomplete-expressions", false);
   pref("devtools.debugger.features.map-expression-bindings", true);
   pref("devtools.debugger.features.map-await-expression", true);
+  pref("devtools.debugger.features.xhr-breakpoints", true);
 }
 
 const prefs = exports.prefs = new _devtoolsModules.PrefsHelper("devtools", {
@@ -117,15 +117,19 @@ const features = exports.features = new _devtoolsModules.PrefsHelper("devtools.d
   autocompleteExpression: ["Bool", "autocomplete-expressions"],
   mapExpressionBindings: ["Bool", "map-expression-bindings"],
   mapAwaitExpression: ["Bool", "map-await-expression"],
-  componentPane: ["Bool", "component-pane"]
+  componentPane: ["Bool", "component-pane"],
+  xhrBreakpoints: ["Bool", "xhr-breakpoints"]
 });
 const asyncStore = exports.asyncStore = (0, _asyncStoreHelper.asyncStoreHelper)("debugger", {
-  pendingBreakpoints: ["pending-breakpoints", {}]
+  pendingBreakpoints: ["pending-breakpoints", {}],
+  tabs: ["tabs", []],
+  xhrBreakpoints: ["xhr-breakpoints", []]
 });
 
 if (prefs.debuggerPrefsSchemaVersion !== prefsSchemaVersion) {
   // clear pending Breakpoints
   prefs.pendingBreakpoints = {};
   prefs.tabs = [];
+  prefs.xhrBreakpoints = [];
   prefs.debuggerPrefsSchemaVersion = prefsSchemaVersion;
 }

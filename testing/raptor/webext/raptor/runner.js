@@ -22,6 +22,9 @@ var postStartupDelay = 30000;
 // delay (ms) between pageload cycles
 var pageCycleDelay = 1000;
 
+var newTabDelay = 1000;
+var reuseTab = false;
+
 var browserName;
 var ext;
 var testName = null;
@@ -37,12 +40,14 @@ var getHero = false;
 var getFNBPaint = false;
 var getFCP = false;
 var getDCF = false;
+var getTTFI = false;
 var isHeroPending = false;
 var pendingHeroes = [];
 var settings = {};
 var isFNBPaintPending = false;
 var isFCPPending = false;
 var isDCFPending = false;
+var isTTFIPending = false;
 var isBenchmarkPending = false;
 var pageTimeout = 10000; // default pageload timeout
 
@@ -85,6 +90,10 @@ function getTestSettings() {
         results.subtest_lower_is_better = settings.subtest_lower_is_better === true;
         results.alert_threshold = settings.alert_threshold;
 
+        if (settings.newtab_per_cycle !== undefined) {
+          reuseTab = settings.newtab_per_cycle;
+        }
+
         if (settings.page_timeout !== undefined) {
           pageTimeout = settings.page_timeout;
         }
@@ -105,6 +114,9 @@ function getTestSettings() {
               if (settings.measure.hero.length !== 0) {
                 getHero = true;
               }
+            }
+            if (settings.measure.ttfi !== undefined) {
+              getTTFI = settings.measure.ttfi;
             }
           } else {
             console.log("abort: 'measure' key not found in test settings");
@@ -160,12 +172,16 @@ function getBrowserInfo() {
 
 function testTabCreated(tab) {
   testTabID = tab.id;
-  console.log("opened new empty tab " + testTabID);
-  nextCycle();
+  postToControlServer("status", "opened new empty tab " + testTabID);
+}
+
+function testTabRemoved(tab) {
+  postToControlServer("status", "Removed tab " + testTabID);
+  testTabID = 0;
 }
 
 async function testTabUpdated(tab) {
-  console.log("test tab updated");
+  postToControlServer("status", "test tab updated " + testTabID);
   // wait for pageload test result from content
   await waitForResult();
   // move on to next cycle (or test complete)
@@ -177,7 +193,7 @@ function waitForResult() {
   return new Promise(resolve => {
     function checkForResult() {
       if (testType == "pageload") {
-        if (!isHeroPending && !isFNBPaintPending && !isFCPPending && !isDCFPending) {
+        if (!isHeroPending && !isFNBPaintPending && !isFCPPending && !isDCFPending && !isTTFIPending) {
           cancelTimeoutAlarm("raptor-page-timeout");
           resolve();
         } else {
@@ -222,15 +238,30 @@ function nextCycle() {
           isFCPPending = true;
         if (getDCF)
           isDCFPending = true;
+        if (getTTFI)
+          isTTFIPending = true;
       } else if (testType == "benchmark") {
         isBenchmarkPending = true;
       }
-      // update the test page - browse to our test URL
-      ext.tabs.update(testTabID, {url: testURL}, testTabUpdated);
-    }, pageCycleDelay);
-  } else {
-    verifyResults();
-  }
+
+      if (reuseTab && testTabID != 0) {
+        // close previous test tab
+        ext.tabs.remove(testTabID);
+        postToControlServer("status", "closing Tab " + testTabID);
+
+        // open new tab
+        ext.tabs.create({url: "about:blank"});
+        postToControlServer("status", "Open new tab");
+      }
+      setTimeout(function() {
+        postToControlServer("status", "update tab " + testTabID);
+        // update the test page - browse to our test URL
+        ext.tabs.update(testTabID, {url: testURL}, testTabUpdated);
+        }, newTabDelay);
+      }, pageCycleDelay);
+    } else {
+      verifyResults();
+    }
 }
 
 function timeoutAlarmListener() {
@@ -298,6 +329,9 @@ function resultListener(request, sender, sendResponse) {
       } else if (request.type == "dcf") {
         results.measurements.dcf.push(request.value);
         isDCFPending = false;
+      } else if (request.type == "ttfi") {
+        results.measurements.ttfi.push(request.value);
+        isTTFIPending = false;
       } else if (request.type == "fcp") {
         results.measurements.fcp.push(request.value);
         isFCPPending = false;
@@ -392,8 +426,13 @@ function runner() {
       }
       // results listener
       ext.runtime.onMessage.addListener(resultListener);
+
       // tab creation listener
       ext.tabs.onCreated.addListener(testTabCreated);
+
+      // tab remove listener
+      ext.tabs.onRemoved.addListener(testTabRemoved);
+
       // timeout alarm listener
       ext.alarms.onAlarm.addListener(timeoutAlarmListener);
 
@@ -402,11 +441,15 @@ function runner() {
       var text = "* pausing " + postStartupDelay / 1000 + " seconds to let browser settle... *";
       postToControlServer("status", text);
 
+      // setTimeout(function() { nextCycle(); }, postStartupDelay);
       // on geckoview you can't create a new tab; only using existing tab - set it blank first
       if (config.browser == "geckoview") {
         setTimeout(function() { nextCycle(); }, postStartupDelay);
       } else {
-        setTimeout(function() { ext.tabs.create({url: "about:blank"}); }, postStartupDelay);
+        setTimeout(function() {
+          ext.tabs.create({url: "about:blank"});
+          nextCycle();
+        }, postStartupDelay);
       }
     });
   });

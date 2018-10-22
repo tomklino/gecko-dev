@@ -103,6 +103,7 @@ enum class GLFeature {
     get_query_object_i64v,
     get_query_object_iv,
     gpu_shader4,
+    gpu_shader5,
     instanced_arrays,
     instanced_non_arrays,
     internalformat_query,
@@ -132,6 +133,8 @@ enum class GLFeature {
     texture_3D,
     texture_3D_compressed,
     texture_3D_copy,
+    texture_compression_bptc,
+    texture_compression_rgtc,
     texture_float,
     texture_float_linear,
     texture_half_float,
@@ -197,6 +200,10 @@ class GLContext
 public:
     MOZ_DECLARE_WEAKREFERENCE_TYPENAME(GLContext)
     static MOZ_THREAD_LOCAL(uintptr_t) sCurrentContext;
+
+    static void ClearGetCurrentContextTLS() {
+        sCurrentContext.set(0);
+    }
 
     bool mImplicitMakeCurrent = false;
     bool mUseTLSIsCurrent;
@@ -339,6 +346,7 @@ public:
 protected:
     bool mIsOffscreen;
     mutable bool mContextLost = false;
+    bool mIsDestroyed = false;
 
     /**
      * mVersion store the OpenGL's version, multiplied by 100. For example, if
@@ -396,6 +404,7 @@ public:
         ARB_framebuffer_object,
         ARB_framebuffer_sRGB,
         ARB_geometry_shader4,
+        ARB_gpu_shader5,
         ARB_half_float_pixel,
         ARB_instanced_arrays,
         ARB_internalformat_query,
@@ -410,6 +419,8 @@ public:
         ARB_shader_texture_lod,
         ARB_sync,
         ARB_texture_compression,
+        ARB_texture_compression_bptc,
+        ARB_texture_compression_rgtc,
         ARB_texture_float,
         ARB_texture_non_power_of_two,
         ARB_texture_rectangle,
@@ -436,6 +447,7 @@ public:
         EXT_framebuffer_object,
         EXT_framebuffer_sRGB,
         EXT_gpu_shader4,
+        EXT_gpu_shader5,
         EXT_multisampled_render_to_texture,
         EXT_occlusion_query_boolean,
         EXT_packed_depth_stencil,
@@ -445,7 +457,9 @@ public:
         EXT_sRGB_write_control,
         EXT_shader_texture_lod,
         EXT_texture3D,
+        EXT_texture_compression_bptc,
         EXT_texture_compression_dxt1,
+        EXT_texture_compression_rgtc,
         EXT_texture_compression_s3tc,
         EXT_texture_compression_s3tc_srgb,
         EXT_texture_filter_anisotropic,
@@ -467,6 +481,7 @@ public:
         NV_fence,
         NV_framebuffer_blit,
         NV_geometry_program4,
+        NV_gpu_shader5,
         NV_half_float,
         NV_instanced_arrays,
         NV_primitive_restart,
@@ -3368,8 +3383,7 @@ public:
     virtual void ReleaseSurface() {}
 
     bool IsDestroyed() const {
-        // MarkDestroyed will mark all these as null.
-        return mSymbols.fUseProgram == nullptr;
+        return mIsDestroyed;
     }
 
     GLContext* GetSharedContext() { return mSharedContext; }

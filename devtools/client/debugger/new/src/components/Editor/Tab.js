@@ -71,7 +71,7 @@ class Tab extends _react.PureComponent {
     const tabMenuItems = (0, _tabs.getTabMenuItems)();
     const items = [{
       item: { ...tabMenuItems.closeTab,
-        click: () => closeTab(sourceTab.url)
+        click: () => closeTab(sourceTab)
       }
     }, {
       item: { ...tabMenuItems.closeOtherTabs,
@@ -101,14 +101,15 @@ class Tab extends _react.PureComponent {
       }
     }, {
       item: { ...tabMenuItems.copySourceUri2,
+        disabled: !selectedSource.url,
         click: () => (0, _clipboard.copyToTheClipboard)((0, _source.getRawSourceURL)(sourceTab.url))
       }
-    }];
-    items.push({
+    }, {
       item: { ...tabMenuItems.showSource,
+        disabled: !selectedSource.url,
         click: () => showSource(tab)
       }
-    });
+    }];
 
     if (!isPrettySource) {
       items.push({
@@ -143,7 +144,7 @@ class Tab extends _react.PureComponent {
 
     function onClickClose(e) {
       e.stopPropagation();
-      closeTab(source.url);
+      closeTab(source);
     }
 
     function handleTabClick(e) {
@@ -162,7 +163,7 @@ class Tab extends _react.PureComponent {
       key: sourceId,
       onClick: handleTabClick // Accommodate middle click to close tab
       ,
-      onMouseUp: e => e.button === 1 && closeTab(source.url),
+      onMouseUp: e => e.button === 1 && closeTab(source),
       onContextMenu: e => this.onTabContextMenu(e, sourceId),
       title: (0, _source.getFileURL)(source)
     }, _react2.default.createElement(_SourceIcon2.default, {

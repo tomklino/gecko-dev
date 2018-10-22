@@ -23,7 +23,8 @@ function setVariableTooltip(tooltip, doc, text) {
   div.classList.add("devtools-monospace", "devtools-tooltip-css-variable");
   div.textContent = text;
 
-  tooltip.setContent(div);
+  tooltip.panel.innerHTML = "";
+  tooltip.panel.appendChild(div);
 }
 
 module.exports.setVariableTooltip = setVariableTooltip;

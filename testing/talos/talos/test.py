@@ -215,22 +215,6 @@ class sessionrestore_many_windows(sessionrestore):
     profile_path = '${talos}/startup_test/sessionrestore/profile-manywindows'
 
 
-@register_test()
-class tresize(TsBase):
-    """
-    This test does some resize thing.
-    """
-    extensions = ['${talos}/startup_test/tresize/addon']
-    cycles = 20
-    url = 'startup_test/tresize/addon/content/tresize-test.html'
-    timeout = 150
-    gecko_profile_interval = 2
-    gecko_profile_entries = 1000000
-    tpmozafterpaint = True
-    filters = filter.ignore_first.prepare(5) + filter.median.prepare()
-    unit = 'ms'
-
-
 # pageloader tests(tp5, etc)
 
 # The overall test number is determined by first calculating the median
@@ -301,14 +285,13 @@ class cpstartup(PageloaderTest):
     initialize it to the point where it can start processing incoming URLs
     to load.
     """
-    extensions = ['${talos}/tests/cpstartup', '${talos}/pageloader']
+    extensions = ['${talos}/pageloader', '${talos}/tests/cpstartup/extension']
     tpmanifest = '${talos}/tests/cpstartup/cpstartup.manifest'
     tppagecycles = 20
     gecko_profile_entries = 1000000
     tploadnocache = True
     unit = 'ms'
     preferences = {
-        'addon.test.cpstartup.webserver': '${webserver}',
         # By default, Talos is configured to open links from
         # content in new windows. We're overriding them so that
         # they open in new tabs instead.
@@ -339,6 +322,7 @@ class tabpaint(PageloaderTest):
         # and http://kb.mozillazine.org/Browser.link.open_newwindow.restriction
         'browser.link.open_newwindow': 3,
         'browser.link.open_newwindow.restriction': 2,
+        'browser.newtab.preload': False,
     }
 
 
@@ -682,6 +666,22 @@ class dromaeo_dom(dromaeo):
     gecko_profile_entries = 10000000
     tpmanifest = '${talos}/tests/dromaeo/dom.manifest'
     unit = 'score'
+
+
+@register_test()
+class tresize(PageloaderTest):
+    """
+    This test does some resize thing.
+    """
+    tpmanifest = '${talos}/tests/tresize/tresize.manifest'
+    extensions = ['${talos}/pageloader', '${talos}/tests/tresize/addon']
+    tppagecycles = 20
+    timeout = 900
+    gecko_profile_interval = 2
+    gecko_profile_entries = 1000000
+    tpmozafterpaint = True
+    filters = filter.ignore_first.prepare(5) + filter.median.prepare()
+    unit = 'ms'
 
 
 @register_test()

@@ -16,9 +16,6 @@ loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
 loader.lazyImporter(this, "ScratchpadManager", "resource://devtools/client/scratchpad/scratchpad-manager.jsm");
 loader.lazyImporter(this, "BrowserToolboxProcess", "resource://devtools/client/framework/ToolboxProcess.jsm");
 
-loader.lazyRequireGetter(this, "WebExtensionInspectedWindowFront",
-      "devtools/shared/fronts/addon/webextension-inspected-window", true);
-
 const {defaultTools: DefaultTools, defaultThemes: DefaultThemes} =
   require("devtools/client/definitions");
 const EventEmitter = require("devtools/shared/event-emitter");
@@ -41,7 +38,7 @@ function DevTools() {
 
   EventEmitter.decorate(this);
   this._telemetry = new Telemetry();
-  this._telemetry.setEventRecordingEnabled("devtools.main", true);
+  this._telemetry.setEventRecordingEnabled(true);
 
   // Listen for changes to the theme pref.
   this._onThemeChanged = this._onThemeChanged.bind(this);
@@ -488,9 +485,7 @@ DevTools.prototype = {
     // the "open" event.
     const width = Math.ceil(toolbox.win.outerWidth / 50) * 50;
     const panelName = this.makeToolIdHumanReadable(toolId || toolbox.defaultToolId);
-    this._telemetry.addEventProperty(
-      "devtools.main", "enter", panelName, null, "width", width
-    );
+    this._telemetry.addEventProperty(toolbox, "enter", panelName, null, "width", width);
 
     return toolbox;
   },
@@ -517,8 +512,9 @@ DevTools.prototype = {
       "DEVTOOLS_COLD_TOOLBOX_OPEN_DELAY_MS" : "DEVTOOLS_WARM_TOOLBOX_OPEN_DELAY_MS";
     this._telemetry.getKeyedHistogramById(telemetryKey).add(toolId, delay);
 
+    const browserWin = toolbox.win.top;
     this._telemetry.addEventProperty(
-      "devtools.main", "open", "tools", null, "first_panel", panelName
+      browserWin, "open", "tools", null, "first_panel", panelName
     );
   },
 
@@ -627,7 +623,7 @@ DevTools.prototype = {
    * browser/components/extensions/ext-devtools-inspectedWindow.js
    */
   createWebExtensionInspectedWindowFront: function(tabTarget) {
-    return new WebExtensionInspectedWindowFront(tabTarget.client, tabTarget.form);
+    return tabTarget.getFront("webExtensionInspectedWindow");
   },
 
   /**
@@ -759,7 +755,7 @@ DevTools.prototype = {
       }
     }
 
-    for (const [key, ] of this.getToolDefinitionMap()) {
+    for (const [key ] of this.getToolDefinitionMap()) {
       this.unregisterTool(key, true);
     }
 

@@ -489,7 +489,7 @@ class JSObject : public js::gc::Cell
                                     js::HandleValue v, js::HandleValue receiver,
                                     JS::ObjectOpResult& result);
 
-    static bool swap(JSContext* cx, JS::HandleObject a, JS::HandleObject b);
+    static void swap(JSContext* cx, JS::HandleObject a, JS::HandleObject b);
 
   private:
     void fixDictionaryShapeAfterSwap();
@@ -562,6 +562,13 @@ class JSObject : public js::gc::Cell
     JSObject(const JSObject& other) = delete;
     void operator=(const JSObject& other) = delete;
 };
+
+template <>
+inline bool
+JSObject::is<JSObject>() const
+{
+    return true;
+}
 
 template <typename Wrapper>
 template <typename U>

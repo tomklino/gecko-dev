@@ -81,7 +81,22 @@ class Output(object):
                     new_subtest['value'] = 0
                     new_subtest['unit'] = test.subtest_unit
 
+                    # ignore first value due to 1st pageload noise
+                    LOG.info("ignoring the first %s value due to initial pageload noise"
+                             % measurement_name)
                     filtered_values = filter.ignore_first(new_subtest['replicates'], 1)
+
+                    # for pageload tests that measure TTFI: TTFI is not guaranteed to be available
+                    # everytime; the raptor measure.js webext will substitute a '-1' value in the
+                    # cases where TTFI is not available, which is acceptable; however we don't want
+                    # to include those '-1' TTFI values in our final results calculations
+                    if measurement_name == "ttfi":
+                        filtered_values = filter.ignore_negative(filtered_values)
+                        # we've already removed the first pageload value; if there aren't any more
+                        # valid TTFI values available for this pageload just remove it from results
+                        if len(filtered_values) < 1:
+                            continue
+
                     new_subtest['value'] = filter.median(filtered_values)
 
                     vals.append([new_subtest['value'], new_subtest['name']])
@@ -102,6 +117,8 @@ class Output(object):
                     subtests, vals = self.parseAssortedDomOutput(test)
                 elif 'wasm-misc' in test.measurements:
                     subtests, vals = self.parseWASMMiscOutput(test)
+                elif 'wasm-godot' in test.measurements:
+                    subtests, vals = self.parseWASMGoDotOutput(test)
                 suite['subtests'] = subtests
 
             else:
@@ -178,6 +195,45 @@ class Output(object):
         '''
         _subtests = {}
         data = test.measurements['wasm-misc']
+        for page_cycle in data:
+            for item in page_cycle[0]:
+                # for each pagecycle, build a list of subtests and append all related replicates
+                sub = item['name']
+                if sub not in _subtests.keys():
+                    # subtest not added yet, first pagecycle, so add new one
+                    _subtests[sub] = {'unit': test.subtest_unit,
+                                      'alertThreshold': float(test.alert_threshold),
+                                      'lowerIsBetter': test.subtest_lower_is_better,
+                                      'name': sub,
+                                      'replicates': []}
+                _subtests[sub]['replicates'].append(item['time'])
+
+        vals = []
+        subtests = []
+        names = _subtests.keys()
+        names.sort(reverse=True)
+        for name in names:
+            _subtests[name]['value'] = filter.median(_subtests[name]['replicates'])
+            subtests.append(_subtests[name])
+            vals.append([_subtests[name]['value'], name])
+
+        return subtests, vals
+
+    def parseWASMGoDotOutput(self, test):
+        '''
+            {u'wasm-godot': [
+                {
+                  "name": "wasm-instantiate",
+                  "time": 349
+                },{
+                  "name": "engine-instantiate",
+                  "time": 1263
+                ...
+                }]}
+        '''
+        _subtests = {}
+        data = test.measurements['wasm-godot']
+        print (data)
         for page_cycle in data:
             for item in page_cycle[0]:
                 # for each pagecycle, build a list of subtests and append all related replicates
@@ -319,15 +375,7 @@ class Output(object):
                                       'replicates': []}
                 _subtests[sub]['replicates'].extend([round(x, 3) for x in replicates])
 
-        total_subtest = {
-            'unit': test.subtest_unit,
-            'alertThreshold': float(test.alert_threshold),
-            'lowerIsBetter': test.subtest_lower_is_better,
-            'replicates': [],
-            'name': 'benchmark_score',
-            'value': 0
-        }
-        subtests = [total_subtest]
+        subtests = []
         vals = []
 
         names = _subtests.keys()
@@ -517,6 +565,14 @@ class Output(object):
         return filter.mean(results)
 
     @classmethod
+    def wasm_godot_score(cls, val_list):
+        """
+        wasm_godot_score: first-interactive mean
+        """
+        results = [i for i, j in val_list if j == 'first-interactive']
+        return filter.mean(results)
+
+    @classmethod
     def stylebench_score(cls, val_list):
         """
         stylebench_score: https://bug-172968-attachments.webkit.org/attachment.cgi?id=319888
@@ -594,6 +650,8 @@ class Output(object):
             return self.assorted_dom_score(vals)
         elif testname.startswith('raptor-wasm-misc'):
             return self.wasm_misc_score(vals)
+        elif testname.startswith('raptor-wasm-godot'):
+            return self.wasm_godot_score(vals)
         elif len(vals) > 1:
             return round(filter.geometric_mean([i for i, j in vals]), 2)
         else:

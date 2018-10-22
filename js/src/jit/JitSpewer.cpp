@@ -9,6 +9,7 @@
 #include "jit/JitSpewer.h"
 
 #include "mozilla/Atomics.h"
+#include "mozilla/Sprintf.h"
 
 #ifdef XP_WIN
 #include <process.h>
@@ -476,6 +477,7 @@ jit::CheckLogging()
             "  bl-bails      Baseline bailouts\n"
             "  bl-dbg-osr    Baseline debug mode on stack recompile messages\n"
             "  bl-all        All baseline spew\n"
+            "  bl-ic-stats   Baseline IC Statistics\n"
             "\n"
         );
         exit(0);
@@ -606,6 +608,9 @@ jit::CheckLogging()
     if (ContainsFlag(env, "bl-dbg-osr")) {
         EnableChannel(JitSpew_BaselineDebugModeOSR);
     }
+    if (ContainsFlag(env, "bl-ic-stats")) {
+        EnableChannel(JitSpew_BaselineIC_Statistics);
+    }
     if (ContainsFlag(env, "bl-all")) {
         EnableChannel(JitSpew_BaselineAbort);
         EnableChannel(JitSpew_BaselineScripts);
@@ -620,7 +625,9 @@ jit::CheckLogging()
     FILE* spewfh = stderr;
     const char* filename = getenv("ION_SPEW_FILENAME");
     if (filename && *filename) {
-        spewfh = fopen(filename, "w");
+        char actual_filename[2048] = {0};
+        SprintfLiteral(actual_filename, "%s.%d", filename, getpid());
+        spewfh = fopen(actual_filename, "w");
         MOZ_RELEASE_ASSERT(spewfh);
         setbuf(spewfh, nullptr); // Make unbuffered
     }

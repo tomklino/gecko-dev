@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/FontPropertyTypes.h"
+#include "mozilla/image/ImageMemoryReporter.h"
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageBridgeChild.h"
@@ -56,9 +57,11 @@
 #elif defined(ANDROID)
 #include "gfxAndroidPlatform.h"
 #endif
+#if defined(MOZ_WIDGET_ANDROID)
+#include "mozilla/jni/Utils.h"  // for IsFennec
+#endif
 
 #ifdef XP_WIN
-#include <windows.h>
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #endif
@@ -663,6 +666,20 @@ struct WebRenderMemoryReporterHelper {
 
   void Report(size_t aBytes, const char* aName) const
   {
+    nsPrintfCString path("explicit/gfx/webrender/%s", aName);
+    nsCString desc(NS_LITERAL_CSTRING("CPU heap memory used by WebRender"));
+    ReportInternal(aBytes, path, desc, nsIMemoryReporter::KIND_HEAP);
+  }
+
+  void ReportTexture(size_t aBytes, const char* aName) const
+  {
+    nsPrintfCString path("gfx/webrender/textures/%s", aName);
+    nsCString desc(NS_LITERAL_CSTRING("GPU texture memory used by WebRender"));
+    ReportInternal(aBytes, path, desc, nsIMemoryReporter::KIND_OTHER);
+  }
+
+  void ReportInternal(size_t aBytes, nsACString& aPath, nsACString& aDesc, int32_t aKind) const
+  {
     // Generally, memory reporters pass the empty string as the process name to
     // indicate "current process". However, if we're using a GPU process, the
     // measurements will actually take place in that process, and it's easier to
@@ -673,10 +690,9 @@ struct WebRenderMemoryReporterHelper {
       GPUParent::GetGPUProcessName(processName);
     }
 
-    nsPrintfCString path("explicit/gfx/webrender/%s", aName);
-    mCallback->Callback(processName, path,
-                        nsIMemoryReporter::KIND_HEAP, nsIMemoryReporter::UNITS_BYTES,
-                        aBytes, EmptyCString(), mData);
+    mCallback->Callback(processName, aPath,
+                        aKind, nsIMemoryReporter::UNITS_BYTES,
+                        aBytes, aDesc, mData);
   }
 };
 
@@ -707,15 +723,24 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
   WebRenderMemoryReporterHelper helper(aHandleReport, aData);
   manager->SendReportMemory(
     [=](wr::MemoryReport aReport) {
+      // CPU Memory.
       helper.Report(aReport.primitive_stores, "primitive-stores");
       helper.Report(aReport.clip_stores, "clip-stores");
       helper.Report(aReport.gpu_cache_metadata, "gpu-cache/metadata");
       helper.Report(aReport.gpu_cache_cpu_mirror, "gpu-cache/cpu-mirror");
       helper.Report(aReport.render_tasks, "render-tasks");
       helper.Report(aReport.hit_testers, "hit-testers");
-      helper.Report(aReport.fonts, "resource-cache/font");
+      helper.Report(aReport.fonts, "resource-cache/fonts");
       helper.Report(aReport.images, "resource-cache/images");
       helper.Report(aReport.rasterized_blobs, "resource-cache/rasterized-blobs");
+
+      // GPU Memory.
+      helper.ReportTexture(aReport.gpu_cache_textures, "gpu-cache");
+      helper.ReportTexture(aReport.vertex_data_textures, "vertex-data");
+      helper.ReportTexture(aReport.render_target_textures, "render-targets");
+      helper.ReportTexture(aReport.texture_cache_textures, "texture-cache");
+      helper.ReportTexture(aReport.depth_target_textures, "depth-targets");
+
       FinishAsyncMemoryReport();
     },
     [](mozilla::ipc::ResponseRejectReason aReason) {
@@ -818,6 +843,14 @@ gfxPlatform::Init()
     nsCOMPtr<nsIGfxInfo> gfxInfo;
     /* this currently will only succeed on Windows */
     gfxInfo = services::GetGfxInfo();
+
+    if (XRE_IsParentProcess()) {
+      // Some gfxVars must be initialized prior gPlatform for coherent results.
+      gfxVars::SetDXInterop2Blocked(IsDXInterop2Blocked());
+      gfxVars::SetDXNV12Blocked(IsDXNV12Blocked());
+      gfxVars::SetDXP010Blocked(IsDXP010Blocked());
+      gfxVars::SetDXP016Blocked(IsDXP016Blocked());
+    }
 
 #if defined(XP_WIN)
     gPlatform = new gfxWindowsPlatform;
@@ -939,8 +972,6 @@ gfxPlatform::Init()
     InitOpenGLConfig();
 
     if (XRE_IsParentProcess()) {
-      gfxVars::SetDXInterop2Blocked(IsDXInterop2Blocked());
-      gfxVars::SetDXNV12Blocked(IsDXNV12Blocked());
       Preferences::Unlock(FONT_VARIATIONS_PREF);
       if (!gPlatform->HasVariationFontSupport()) {
         // Ensure variation fonts are disabled and the pref is locked.
@@ -969,30 +1000,40 @@ gfxPlatform::Init()
     }
 }
 
-/* static*/ bool
-gfxPlatform::IsDXInterop2Blocked()
+bool
+IsFeatureSupported(long aFeature)
 {
   nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
   nsCString blockId;
   int32_t status;
-  if (!NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DX_INTEROP2,
+  if (!NS_SUCCEEDED(gfxInfo->GetFeatureStatus(aFeature,
                                               blockId, &status))) {
     return true;
   }
   return status != nsIGfxInfo::FEATURE_STATUS_OK;
 }
+/* static*/ bool
+gfxPlatform::IsDXInterop2Blocked()
+{
+  return IsFeatureSupported(nsIGfxInfo::FEATURE_DX_INTEROP2);
+}
 
 /* static*/ bool
 gfxPlatform::IsDXNV12Blocked()
 {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
-  nsCString blockId;
-  int32_t status;
-  if (!NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DX_NV12,
-                                              blockId, &status))) {
-    return true;
-  }
-  return status != nsIGfxInfo::FEATURE_STATUS_OK;
+  return IsFeatureSupported(nsIGfxInfo::FEATURE_DX_NV12);
+}
+
+/* static*/ bool
+gfxPlatform::IsDXP010Blocked()
+{
+  return IsFeatureSupported(nsIGfxInfo::FEATURE_DX_P010);
+}
+
+/* static*/ bool
+gfxPlatform::IsDXP016Blocked()
+{
+  return IsFeatureSupported(nsIGfxInfo::FEATURE_DX_P016);
 }
 
 /* static */ int32_t
@@ -1144,10 +1185,10 @@ gfxPlatform::InitLayersIPC()
   if (XRE_IsParentProcess() || recordreplay::IsRecordingOrReplaying()) {
     if (!gfxConfig::IsEnabled(Feature::GPU_PROCESS) && gfxVars::UseWebRender()) {
       wr::RenderThread::Start();
+      image::ImageMemoryReporter::InitForWebRender();
     }
 
     layers::CompositorThreadHolder::Start();
-    gfx::VRListenerThreadHolder::Start();
   }
 }
 
@@ -1176,7 +1217,7 @@ gfxPlatform::ShutdownLayersIPC()
         layers::ImageBridgeChild::ShutDown();
         // This has to happen after shutting down the child protocols.
         layers::CompositorThreadHolder::Shutdown();
-        gfx::VRListenerThreadHolder::Shutdown();
+        image::ImageMemoryReporter::ShutdownForWebRender();
         // There is a case that RenderThread exists when gfxVars::UseWebRender() is false.
         // This could happen when WebRender was fallbacked to compositor.
         if (wr::RenderThread::Get()) {
@@ -2627,22 +2668,6 @@ gfxPlatform::WebRenderEnvvarEnabled()
   return (env && *env == '1');
 }
 
-/* This is a pretty conservative check for having a battery.
- * For now we'd rather err on the side of thinking we do. */
-static bool HasBattery()
-{
-#ifdef XP_WIN
-  SYSTEM_POWER_STATUS status;
-  const BYTE NO_SYSTEM_BATTERY = 128;
-  if (GetSystemPowerStatus(&status)) {
-    if (status.BatteryFlag == NO_SYSTEM_BATTERY) {
-      return false;
-    }
-  }
-#endif
-  return true;
-}
-
 void
 gfxPlatform::InitWebRenderConfig()
 {
@@ -2658,6 +2683,12 @@ gfxPlatform::InitWebRenderConfig()
   // In all cases WR- means WR was not enabled, for one of many possible reasons.
   ScopedGfxFeatureReporter reporter("WR", prefEnabled || envvarEnabled);
   if (!XRE_IsParentProcess()) {
+    // Force-disable WebRender in recording/replaying child processes, which
+    // have their own compositor.
+    if (recordreplay::IsRecordingOrReplaying()) {
+      gfxVars::SetUseWebRender(false);
+    }
+
     // The parent process runs through all the real decision-making code
     // later in this function. For other processes we still want to report
     // the state of the feature for crash reports.
@@ -2805,10 +2836,12 @@ gfxPlatform::InitWebRenderConfig()
   }
 
 #ifdef MOZ_WIDGET_ANDROID
-  featureWebRender.ForceDisable(
-    FeatureStatus::Unavailable,
-    "WebRender not ready for use on Android",
-    NS_LITERAL_CSTRING("FEATURE_FAILURE_ANDROID"));
+  if (jni::IsFennec()) {
+    featureWebRender.ForceDisable(
+      FeatureStatus::Unavailable,
+      "WebRender not ready for use on non-e10s Android",
+      NS_LITERAL_CSTRING("FEATURE_FAILURE_ANDROID"));
+  }
 #endif
 
   // gfxFeature is not usable in the GPU process, so we use gfxVars to transmit this feature

@@ -413,7 +413,7 @@ EditorBase::InstallEventListeners()
   // Initialize the event target.
   nsCOMPtr<nsIContent> rootContent = GetRoot();
   NS_ENSURE_TRUE(rootContent, NS_ERROR_NOT_AVAILABLE);
-  mEventTarget = do_QueryInterface(rootContent->GetParent());
+  mEventTarget = rootContent->GetParent();
   NS_ENSURE_TRUE(mEventTarget, NS_ERROR_NOT_AVAILABLE);
 
   nsresult rv = mEventListener->Connect(this);
@@ -1201,7 +1201,7 @@ EditorBase::CanDelete(bool* aCanDelete)
 NS_IMETHODIMP
 EditorBase::Paste(int32_t aClipboardType)
 {
-  nsresult rv = AsTextEditor()->PasteAsAction(aClipboardType);
+  nsresult rv = AsTextEditor()->PasteAsAction(aClipboardType, true);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -2511,7 +2511,7 @@ void
 EditorBase::CloneAttributesWithTransaction(Element& aDestElement,
                                            Element& aSourceElement)
 {
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
 
   // Use transaction system for undo only if destination is already in the
   // document
@@ -4667,11 +4667,10 @@ EditorBase::HandleInlineSpellCheck(EditSubAction aEditSubAction,
                                 aEndOffset);
 }
 
-already_AddRefed<nsIContent>
-EditorBase::FindSelectionRoot(nsINode* aNode)
+Element*
+EditorBase::FindSelectionRoot(nsINode* aNode) const
 {
-  nsCOMPtr<nsIContent> rootContent = GetRoot();
-  return rootContent.forget();
+  return GetRoot();
 }
 
 void
@@ -5180,6 +5179,46 @@ EditorBase::HideCaret(bool aHide)
     caret->AddForceHide();
   } else {
     caret->RemoveForceHide();
+  }
+}
+
+/******************************************************************************
+ * EditorBase::AutoSelectionRestorer
+ *****************************************************************************/
+
+EditorBase::AutoSelectionRestorer::AutoSelectionRestorer(
+                                     Selection& aSelection,
+                                     EditorBase& aEditorBase
+                                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+  : mEditorBase(nullptr)
+{
+  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  if (aEditorBase.ArePreservingSelection()) {
+    // We already have initialized mSavedSel, so this must be nested call.
+    return;
+  }
+  mSelection = &aSelection;
+  mEditorBase = &aEditorBase;
+  mEditorBase->PreserveSelectionAcrossActions(mSelection);
+}
+
+EditorBase::AutoSelectionRestorer::~AutoSelectionRestorer()
+{
+  NS_ASSERTION(!mSelection || mEditorBase,
+               "mEditorBase should be non-null when mSelection is");
+  // mSelection will be null if this was nested call.
+  if (mSelection && mEditorBase->ArePreservingSelection()) {
+    mEditorBase->RestorePreservedSelection(mSelection);
+  }
+}
+
+void
+EditorBase::AutoSelectionRestorer::Abort()
+{
+  NS_ASSERTION(!mSelection || mEditorBase,
+               "mEditorBase should be non-null when mSelection is");
+  if (mSelection) {
+    mEditorBase->StopPreservingSelection();
   }
 }
 

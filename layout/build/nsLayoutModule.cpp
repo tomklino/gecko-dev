@@ -210,19 +210,11 @@ static bool gInitialized = false;
 
 // Perform our one-time intialization for this module
 
-static nsresult
-Initialize()
+void
+nsLayoutModuleInitialize()
 {
   if (gInitialized) {
     MOZ_CRASH("Recursive layout module initialization");
-    return NS_ERROR_FAILURE;
-  }
-  if (XRE_GetProcessType() == GeckoProcessType_GPU) {
-    // We mark the layout module as being available in the GPU process so that
-    // XPCOM's component manager initializes the power manager service, which
-    // is needed for nsAppShell. However, we don't actually need anything in
-    // the layout module itself.
-    return NS_OK;
   }
 
   static_assert(sizeof(uintptr_t) == sizeof(void*),
@@ -231,18 +223,22 @@ Initialize()
 
   gInitialized = true;
 
-  nsresult rv;
-  rv = xpcModuleCtor();
-  if (NS_FAILED(rv))
-    return rv;
-
-  rv = nsLayoutStatics::Initialize();
-  if (NS_FAILED(rv)) {
-    Shutdown();
-    return rv;
+  if (XRE_GetProcessType() == GeckoProcessType_GPU) {
+    // We mark the layout module as being available in the GPU process so that
+    // XPCOM's component manager initializes the power manager service, which
+    // is needed for nsAppShell. However, we don't actually need anything in
+    // the layout module itself.
+    return;
   }
 
-  return NS_OK;
+  if (NS_FAILED(xpcModuleCtor())) {
+    MOZ_CRASH("xpcModuleCtor failed");
+  }
+
+  if (NS_FAILED(nsLayoutStatics::Initialize())) {
+    Shutdown();
+    MOZ_CRASH("nsLayoutStatics::Initialize failed");
+  }
 }
 
 // Shutdown this module, releasing all of the module resources
@@ -505,6 +501,7 @@ NS_DEFINE_NAMED_CID(TEXT_INPUT_PROCESSOR_CID);
 NS_DEFINE_NAMED_CID(NS_SCRIPTERROR_CID);
 
 static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
+  // clang-format off
   XPCONNECT_CIDENTRIES
 #ifdef DEBUG
   { &kNS_LAYOUT_DEBUGGER_CID, false, nullptr, CreateNewLayoutDebugger },
@@ -582,9 +579,11 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kTEXT_INPUT_PROCESSOR_CID, false, nullptr, TextInputProcessorConstructor },
   { &kNS_SCRIPTERROR_CID, false, nullptr, nsScriptErrorConstructor },
   { nullptr }
+  // clang-format on
 };
 
 static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
+  // clang-format off
   XPCONNECT_CONTRACTS
   { "@mozilla.org/inspector/deep-tree-walker;1", &kIN_DEEPTREEWALKER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "text/xml", &kNS_TEXT_ENCODER_CID },
@@ -665,7 +664,6 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
 };
 
 static const mozilla::Module::CategoryEntry kLayoutCategories[] = {
-  XPCONNECT_CATEGORIES
   { "content-policy", NS_DATADOCUMENTCONTENTPOLICY_CONTRACTID, NS_DATADOCUMENTCONTENTPOLICY_CONTRACTID },
   { "content-policy", NS_NODATAPROTOCOLCONTENTPOLICY_CONTRACTID, NS_NODATAPROTOCOLCONTENTPOLICY_CONTRACTID },
   { "content-policy", "CSPService", CSPSERVICE_CONTRACTID },
@@ -681,7 +679,16 @@ static const mozilla::Module::CategoryEntry kLayoutCategories[] = {
   { "profile-after-change", "PresentationService", PRESENTATION_SERVICE_CONTRACTID },
   { "profile-after-change", "Notification Telemetry Service", NOTIFICATIONTELEMETRYSERVICE_CONTRACTID },
   { nullptr }
+  // clang-format on
 };
+
+static nsresult
+Initialize()
+{
+  // nsLayoutModuleInitialize should be called first.
+  MOZ_RELEASE_ASSERT(gInitialized);
+  return NS_OK;
+}
 
 static void
 LayoutModuleDtor()

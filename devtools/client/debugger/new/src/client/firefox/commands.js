@@ -35,6 +35,18 @@ function setupCommands(dependencies) {
   };
 }
 
+function createObjectClient(grip) {
+  return debuggerClient.createObjectClient(grip);
+}
+
+function releaseActor(actor) {
+  if (!actor) {
+    return;
+  }
+
+  return debuggerClient.release(actor);
+}
+
 function sendPacket(packet, callback = r => r) {
   return debuggerClient.request(packet).then(callback);
 }
@@ -123,6 +135,14 @@ function getBreakpointByLocation(location) {
   }
 
   return null;
+}
+
+function setXHRBreakpoint(path, method) {
+  return threadClient.setXHRBreakpoint(path, method);
+}
+
+function removeXHRBreakpoint(path, method) {
+  return threadClient.removeXHRBreakpoint(path, method);
 }
 
 function setBreakpoint(location, condition, noSliding) {
@@ -235,7 +255,7 @@ function debuggeeCommand(script) {
 }
 
 function navigate(url) {
-  return tabTarget.activeTab.navigateTo(url);
+  return tabTarget.activeTab.navigateTo({ url });
 }
 
 function reload() {
@@ -406,6 +426,8 @@ async function fetchWorkers() {
 const clientCommands = {
   autocomplete,
   blackBox,
+  createObjectClient,
+  releaseActor,
   interrupt,
   eventListeners,
   pauseGrip,
@@ -421,6 +443,8 @@ const clientCommands = {
   sourceContents,
   getBreakpointByLocation,
   setBreakpoint,
+  setXHRBreakpoint,
+  removeXHRBreakpoint,
   removeBreakpoint,
   setBreakpointCondition,
   evaluate,

@@ -462,8 +462,8 @@ HTMLEditor::UpdateRootElement()
   }
 }
 
-already_AddRefed<nsIContent>
-HTMLEditor::FindSelectionRoot(nsINode* aNode)
+Element*
+HTMLEditor::FindSelectionRoot(nsINode* aNode) const
 {
   if (NS_WARN_IF(!aNode)) {
     return nullptr;
@@ -472,42 +472,38 @@ HTMLEditor::FindSelectionRoot(nsINode* aNode)
   MOZ_ASSERT(aNode->IsDocument() || aNode->IsContent(),
              "aNode must be content or document node");
 
-  nsCOMPtr<nsIDocument> doc = aNode->GetComposedDoc();
+  nsIDocument* doc = aNode->GetComposedDoc();
   if (!doc) {
     return nullptr;
   }
 
-  nsCOMPtr<nsIContent> content;
   if (aNode->IsInUncomposedDoc() &&
       (doc->HasFlag(NODE_IS_EDITABLE) || !aNode->IsContent())) {
-    content = doc->GetRootElement();
-    return content.forget();
+    return doc->GetRootElement();
   }
-  content = aNode->AsContent();
 
   // XXX If we have readonly flag, shouldn't return the element which has
   // contenteditable="true"?  However, such case isn't there without chrome
   // permission script.
   if (IsReadonly()) {
     // We still want to allow selection in a readonly editor.
-    content = do_QueryInterface(GetRoot());
-    return content.forget();
+    return GetRoot();
   }
 
+  nsIContent* content = aNode->AsContent();
   if (!content->HasFlag(NODE_IS_EDITABLE)) {
     // If the content is in read-write state but is not editable itself,
     // return it as the selection root.
     if (content->IsElement() &&
         content->AsElement()->State().HasState(NS_EVENT_STATE_MOZ_READWRITE)) {
-      return content.forget();
+      return content->AsElement();
     }
     return nullptr;
   }
 
   // For non-readonly editors we want to find the root of the editable subtree
   // containing aContent.
-  content = content->GetEditingHost();
-  return content.forget();
+  return content->GetEditingHost();
 }
 
 void
@@ -1114,7 +1110,7 @@ HTMLEditor::UpdateBaseURL()
 nsresult
 HTMLEditor::OnInputLineBreak()
 {
-  AutoPlaceholderBatch batch(this, nsGkAtoms::TypingTxnName);
+  AutoPlaceholderBatch treatAsOneTransaction(*this, *nsGkAtoms::TypingTxnName);
   nsresult rv = InsertBrElementAtSelectionWithTransaction();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -1330,7 +1326,7 @@ HTMLEditor::ReplaceHeadContentsWithSourceWithTransaction(
   inputString.ReplaceSubstring(NS_LITERAL_STRING("\r"),
                                NS_LITERAL_STRING("\n"));
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
 
   // Get the first range in the selection, for context:
   RefPtr<nsRange> range = selection->GetRangeAt(0);
@@ -1426,7 +1422,7 @@ HTMLEditor::RebuildDocumentFromSource(const nsAString& aSourceString)
   }
 
   // Time to change the document
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
 
   nsReadingIterator<char16_t> endtotal;
   aSourceString.EndReading(endtotal);
@@ -1636,7 +1632,7 @@ HTMLEditor::InsertElementAtSelection(Element* aElement,
   NS_ENSURE_TRUE(aElement, NS_ERROR_NULL_POINTER);
 
   CommitComposition();
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
                                       *this, EditSubAction::eInsertElement,
                                       nsIEditor::eNext);
@@ -1828,7 +1824,7 @@ HTMLEditor::SelectContentInternal(Selection& aSelection,
   }
 
   // Don't notify selection change at collapse.
-  AutoUpdateViewBatch notifySelectionChangeOnce(this);
+  AutoUpdateViewBatch notifySelectionChangeOnce(*this);
 
   // XXX Perhaps, Selection should have SelectNode(nsIContent&).
   int32_t offsetInParent = parent->ComputeIndexOf(&aContentToSelect);
@@ -2135,7 +2131,7 @@ HTMLEditor::MakeOrChangeList(const nsAString& aListType,
 
   bool cancel, handled;
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
                                       *this, EditSubAction::eCreateOrChangeList,
                                       nsIEditor::eNext);
@@ -2230,7 +2226,7 @@ HTMLEditor::RemoveList(const nsAString&)
 
   bool cancel, handled;
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
                                       *this, EditSubAction::eRemoveList,
                                       nsIEditor::eNext);
@@ -2266,7 +2262,7 @@ HTMLEditor::MakeDefinitionListItemWithTransaction(nsAtom& aTagName)
 
   bool cancel, handled;
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   AutoTopLevelEditSubActionNotifier
     maybeTopLevelEditSubAction(*this,
                                EditSubAction::eCreateOrChangeDefinitionList,
@@ -2308,7 +2304,7 @@ HTMLEditor::InsertBasicBlockWithTransaction(nsAtom& aTagName)
 
   bool cancel, handled;
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
                                       *this,
                                       EditSubAction::eCreateOrRemoveBlock,
@@ -2412,7 +2408,7 @@ HTMLEditor::IndentAsAction()
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   nsresult rv = IndentOrOutdentAsSubAction(EditSubAction::eIndent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -2427,7 +2423,7 @@ HTMLEditor::OutdentAsAction()
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   nsresult rv = IndentOrOutdentAsSubAction(EditSubAction::eOutdent);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -2549,7 +2545,7 @@ HTMLEditor::Align(const nsAString& aAlignType)
   // Protect the edit rules object from dying
   RefPtr<TextEditRules> rules(mRules);
 
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
                                       *this,
                                       EditSubAction::eSetOrClearAlignment,
@@ -2963,7 +2959,7 @@ HTMLEditor::InsertLinkAroundSelection(Element* aAnchorElement)
   }
 
   nsresult rv;
-  AutoPlaceholderBatch beginBatching(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
 
   // Set all attributes found on the supplied anchor element
   RefPtr<nsDOMAttributeMap> attrMap = anchor->Attributes();
@@ -4477,11 +4473,11 @@ HTMLEditor::SetCSSBackgroundColorWithTransaction(const nsAString& aColor)
 
   bool isCollapsed = selection->IsCollapsed();
 
-  AutoPlaceholderBatch batchIt(this);
+  AutoPlaceholderBatch treatAsOneTransaction(*this);
   AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
                                       *this, EditSubAction::eInsertElement,
                                       nsIEditor::eNext);
-  AutoSelectionRestorer selectionRestorer(selection, this);
+  AutoSelectionRestorer restoreSelectionLater(*selection, *this);
   AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
   // XXX Although, this method may set background color of ancestor block

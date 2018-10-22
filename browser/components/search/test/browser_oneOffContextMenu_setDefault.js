@@ -31,9 +31,7 @@ add_task(async function init() {
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
   });
-  searchIcon = document.getAnonymousElementByAttribute(
-    searchbar, "anonid", "searchbar-search-button"
-  );
+  searchIcon = searchbar.querySelector(".searchbar-search-button");
 
   await promiseNewEngine(TEST_ENGINE_BASENAME, {
     setAsCurrent: false,
@@ -113,7 +111,7 @@ function promiseCurrentEngineChanged() {
   return new Promise(resolve => {
     function observer(aSub, aTopic, aData) {
       if (aData == "engine-current") {
-        Assert.ok(Services.search.currentEngine.name, TEST_ENGINE_NAME, "currentEngine set");
+        Assert.equal(Services.search.currentEngine.name, TEST_ENGINE_NAME, "currentEngine set");
         Services.obs.removeObserver(observer, "browser-search-engine-modified");
         resolve();
       }

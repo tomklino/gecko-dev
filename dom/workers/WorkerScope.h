@@ -191,14 +191,6 @@ public:
                     int32_t aSx, int32_t aSy, int32_t aSw, int32_t aSh,
                     ErrorResult& aRv);
 
-  already_AddRefed<mozilla::dom::Promise>
-  CreateImageBitmap(JSContext* aCx,
-                    const ImageBitmapSource& aImage,
-                    int32_t aOffset, int32_t aLength,
-                    mozilla::dom::ImageBitmapFormat aFormat,
-                    const mozilla::dom::Sequence<mozilla::dom::ChannelPixelLayout>& aLayout,
-                    mozilla::ErrorResult& aRv);
-
   bool
   WindowInteractionAllowed() const
   {
@@ -342,6 +334,7 @@ public:
   IMPL_EVENT_HANDLER(activate)
   IMPL_EVENT_HANDLER(install)
   IMPL_EVENT_HANDLER(message)
+  IMPL_EVENT_HANDLER(messageerror)
 
   IMPL_EVENT_HANDLER(push)
   IMPL_EVENT_HANDLER(pushsubscriptionchange)

@@ -3,6 +3,7 @@
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
+exports.shouldPauseOnAnyXHR = exports.getXHRBreakpoints = exports.getBreakpointSources = exports.getVisibleSelectedFrame = exports.getCallStackFrames = exports.isSelectedFrameVisible = exports.inComponent = exports.getVisibleBreakpoints = exports.getBreakpointsAtLine = exports.getBreakpointAtLocation = exports.getQuickOpenType = exports.getQuickOpenQuery = exports.getQuickOpenEnabled = exports.getEventListeners = undefined;
 
 var _expressions = require("../reducers/expressions");
 
@@ -257,4 +258,35 @@ Object.defineProperty(exports, "getBreakpointSources", {
   get: function () {
     return _breakpointSources.getBreakpointSources;
   }
+});
+
+var _breakpoints2 = require("./breakpoints");
+
+Object.defineProperty(exports, "getXHRBreakpoints", {
+  enumerable: true,
+  get: function () {
+    return _breakpoints2.getXHRBreakpoints;
+  }
+});
+Object.defineProperty(exports, "shouldPauseOnAnyXHR", {
+  enumerable: true,
+  get: function () {
+    return _breakpoints2.shouldPauseOnAnyXHR;
+  }
+});
+
+var _devtoolsReps = require("devtools/client/shared/components/reps/reps.js");
+
+const {
+  reducer
+} = _devtoolsReps.objectInspector;
+Object.keys(reducer).forEach(function (key) {
+  if (key === "default" || key === "__esModule") {
+    return;
+  }
+
+  Object.defineProperty(exports, key, {
+    enumerable: true,
+    get: reducer[key]
+  });
 });

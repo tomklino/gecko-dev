@@ -46,7 +46,7 @@ async function add_link(aOptions = {}) {
       is(title.textContent, "Add Credit Card", "Add title should be set");
 
       let saveButton = content.document.querySelector("basic-card-form .save-button");
-      is(saveButton.textContent, "Add", "Save button has the correct label");
+      is(saveButton.textContent, "Next", "Save button has the correct label");
 
       is(state.isPrivate, testArgs.isPrivate,
          "isPrivate flag has expected value when shown from a private/non-private session");
@@ -61,7 +61,10 @@ async function add_link(aOptions = {}) {
     if (aOptions.hasOwnProperty("setCardPersistCheckedValue")) {
       cardOptions.setPersistCheckedValue = aOptions.setCardPersistCheckedValue;
     }
-    await fillInCardForm(frame, PTU.BasicCards.JaneMasterCard, cardOptions);
+    await fillInCardForm(frame, {
+      ["cc-csc"]: 123,
+      ...PTU.BasicCards.JaneMasterCard,
+    }, cardOptions);
 
     await verifyCardNetwork(frame, cardOptions);
     await verifyPersistCheckbox(frame, cardOptions);
@@ -74,7 +77,7 @@ async function add_link(aOptions = {}) {
          "Only 2 child options should exist by default");
       is(billingAddressSelect.children[0].value, "",
          "The first option should be the blank/empty option");
-      ok(billingAddressSelect.children[1].value, "",
+      ok(billingAddressSelect.children[1].value,
          "The 2nd option is the prefilled address and should be truthy");
     }, aOptions);
 
@@ -650,7 +653,10 @@ add_task(async function test_private_card_adding() {
                                                 "Check card page state");
     });
 
-    await fillInCardForm(frame, PTU.BasicCards.JohnDoe);
+    await fillInCardForm(frame, {
+      ["cc-csc"]: "999",
+      ...PTU.BasicCards.JohnDoe,
+    });
 
     await spawnPaymentDialogTask(frame, async function() {
       let {

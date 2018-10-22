@@ -110,7 +110,8 @@ function bootstrapWorkers() {
 
   if ((0, _devtoolsEnvironment.isDevelopment)()) {
     // When used in Firefox, the toolbox manages the source map worker.
-    (0, _devtoolsSourceMap.startSourceMapWorker)(`${workerPath}/source-map-worker.js`);
+    (0, _devtoolsSourceMap.startSourceMapWorker)(`${workerPath}/source-map-worker.js`, // This is relative to the worker itself.
+    "./source-map-worker-assets/");
   }
 
   prettyPrint.start(`${workerPath}/pretty-print-worker.js`);
@@ -147,12 +148,19 @@ function bootstrapApp(store) {
 }
 
 let currentPendingBreakpoints;
+let currentXHRBreakpoints;
 
 function updatePrefs(state) {
   const previousPendingBreakpoints = currentPendingBreakpoints;
+  const previousXHRBreakpoints = currentXHRBreakpoints;
   currentPendingBreakpoints = selectors.getPendingBreakpoints(state);
+  currentXHRBreakpoints = selectors.getXHRBreakpoints(state);
 
   if (previousPendingBreakpoints && currentPendingBreakpoints !== previousPendingBreakpoints) {
     _prefs.asyncStore.pendingBreakpoints = currentPendingBreakpoints;
+  }
+
+  if (currentXHRBreakpoints !== previousXHRBreakpoints) {
+    _prefs.asyncStore.xhrBreakpoints = currentXHRBreakpoints.toJS();
   }
 }

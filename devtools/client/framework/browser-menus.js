@@ -82,7 +82,7 @@ function createToolMenuElements(toolDefinition, doc) {
     try {
       const window = event.target.ownerDocument.defaultView;
       await gDevToolsBrowser.selectToolCommand(window.gBrowser, id, Cu.now());
-      sendEntryPointTelemetry();
+      sendEntryPointTelemetry(window);
     } catch (e) {
       console.error(`Exception while opening ${id}: ${e}\n${e.stack}`);
     }
@@ -92,7 +92,7 @@ function createToolMenuElements(toolDefinition, doc) {
     doc,
     id: "menuitem_" + id,
     label: toolDefinition.menuLabel || toolDefinition.label,
-    accesskey: toolDefinition.accesskey
+    accesskey: toolDefinition.accesskey,
   });
   // Refer to the key in order to display the key shortcut at menu ends
   // This <key> element is being created by devtools/client/devtools-startup.js
@@ -100,7 +100,7 @@ function createToolMenuElements(toolDefinition, doc) {
   menuitem.addEventListener("command", oncommand);
 
   return {
-    menuitem
+    menuitem,
   };
 }
 
@@ -110,17 +110,15 @@ function createToolMenuElements(toolDefinition, doc) {
  * `devtools/startup/devtools-startup.js` but that codepath is only used the
  * first time a toolbox is opened for a tab.
  */
-function sendEntryPointTelemetry() {
+function sendEntryPointTelemetry(window) {
   if (!telemetry) {
     telemetry = new Telemetry();
   }
 
-  telemetry.addEventProperty(
-    "devtools.main", "open", "tools", null, "shortcut", ""
-  );
+  telemetry.addEventProperty(window, "open", "tools", null, "shortcut", "");
 
   telemetry.addEventProperty(
-    "devtools.main", "open", "tools", null, "entrypoint", "SystemMenu"
+    window, "open", "tools", null, "entrypoint", "SystemMenu"
   );
 }
 
@@ -230,7 +228,7 @@ function addTopLevelItems(doc) {
         id,
         label: l10n(l10nKey + ".label"),
         accesskey: l10n(l10nKey + ".accesskey"),
-        isCheckbox: item.checkbox
+        isCheckbox: item.checkbox,
       });
       menuitem.addEventListener("command", item.oncommand);
       menuItems.appendChild(menuitem);
@@ -286,6 +284,8 @@ exports.addMenus = function(doc) {
   addTopLevelItems(doc);
 
   addAllToolsToMenu(doc);
+
+  require("../webreplay/menu").addWebReplayMenu(doc);
 };
 
 /**

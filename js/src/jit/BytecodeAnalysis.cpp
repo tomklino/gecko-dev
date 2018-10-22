@@ -117,14 +117,11 @@ BytecodeAnalysis::init(TempAllocator& alloc, GSNCache& gsn)
           }
 
           case JSOP_TRY: {
-            JSTryNote* tn = script_->trynotes()->vector;
-            JSTryNote* tnlimit = tn + script_->trynotes()->length;
-            for (; tn < tnlimit; tn++) {
-                unsigned startOffset = script_->mainOffset() + tn->start;
-                if (startOffset == offset + 1) {
-                    unsigned catchOffset = startOffset + tn->length;
+            for (const JSTryNote& tn : script_->trynotes()) {
+                if (tn.start == offset + 1) {
+                    unsigned catchOffset = tn.start + tn.length;
 
-                    if (tn->kind != JSTRY_FOR_IN) {
+                    if (tn.kind != JSTRY_FOR_IN) {
                         infos_[catchOffset].init(stackDepth);
                         infos_[catchOffset].jumpTarget = true;
                     }

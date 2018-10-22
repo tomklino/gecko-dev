@@ -11,6 +11,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/AudioContext.h"
 #include "mozilla/AutoplayPermissionManager.h"
+#include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/HTMLMediaElementBinding.h"
 #include "nsGlobalWindowInner.h"
@@ -26,21 +27,6 @@ mozilla::LazyLogModule gAutoplayPermissionLog("Autoplay");
 
 #define AUTOPLAY_LOG(msg, ...)                                             \
   MOZ_LOG(gAutoplayPermissionLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
-
-static const char*
-AllowAutoplayToStr(const uint32_t state)
-{
-  switch (state) {
-    case nsIAutoplay::ALLOWED:
-      return "allowed";
-    case nsIAutoplay::BLOCKED:
-      return "blocked";
-    case nsIAutoplay::PROMPT:
-      return "prompt";
-    default:
-      return "unknown";
-  }
-}
 
 namespace mozilla {
 namespace dom {
@@ -91,6 +77,16 @@ IsWindowAllowedToPlay(nsPIDOMWindowInner* aWindow)
   }
 
   if (!aWindow->GetExtantDoc()) {
+    return false;
+  }
+
+  // Here we are checking whether the current document is blocked via
+  // feature-policy, and further down we walk up the doc tree to the top level
+  // content document and check permissions etc on the top level content
+  // document. FeaturePolicy propagates the permission to any sub-documents if
+  // they don't have special directives.
+  if (!FeaturePolicyUtils::IsFeatureAllowed(aWindow->GetExtantDoc(),
+                                            NS_LITERAL_STRING("autoplay"))) {
     return false;
   }
 
@@ -203,7 +199,7 @@ AutoplayPolicy::IsAllowedToPlay(const HTMLMediaElement& aElement)
     autoplayDefault == nsIAutoplay::ALLOWED;
 
   AUTOPLAY_LOG("IsAllowedToPlay, mediaElement=%p, isAllowToPlay=%s",
-                &aElement, AllowAutoplayToStr(result));
+                &aElement, result ? "allowed" : "blocked");
 
   return result;
 }

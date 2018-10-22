@@ -118,8 +118,11 @@ public:
    *
    * @param aClipboardType      nsIClipboard::kGlobalClipboard or
    *                            nsIClipboard::kSelectionClipboard.
+   * @param aDispatchPasteEvent true if this should dispatch ePaste event
+   *                            before pasting.  Otherwise, false.
    */
-  nsresult PasteAsAction(int32_t aClipboardType);
+  nsresult PasteAsAction(int32_t aClipboardType,
+                         bool aDispatchPasteEvent);
 
   /**
    * InsertTextAsAction() inserts aStringToInsert at selection.
@@ -138,8 +141,11 @@ public:
    *
    * @param aClipboardType      nsIClipboard::kGlobalClipboard or
    *                            nsIClipboard::kSelectionClipboard.
+   * @param aDispatchPasteEvent true if this should dispatch ePaste event
+   *                            before pasting.  Otherwise, false.
    */
-  virtual nsresult PasteAsQuotationAsAction(int32_t aClipboardType);
+  virtual nsresult PasteAsQuotationAsAction(int32_t aClipboardType,
+                                            bool aDispatchPasteEvent);
 
   /**
    * DeleteSelectionAsAction() removes selection content or content around
@@ -213,6 +219,7 @@ public:
    * OnDrop() is called from EditorEventListener::Drop that is handler of drop
    * event.
    */
+  MOZ_CAN_RUN_SCRIPT
   nsresult OnDrop(dom::DragEvent* aDropEvent);
 
   /**
@@ -328,6 +335,14 @@ protected: // May be called by friends.
    */
   nsresult ExtendSelectionForDelete(Selection* aSelection,
                                     nsIEditor::EDirection* aAction);
+
+  /**
+   * HideLastPasswordInput() is called by timer callback of TextEditRules.
+   * This should be called only by TextEditRules::Notify().
+   * When this is called, the TextEditRules wants to call its
+   * HideLastPasswordInput().
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult HideLastPasswordInput();
 
   static void GetDefaultEditorPrefs(int32_t& aNewLineHandling,
                                     int32_t& aCaretStyle);

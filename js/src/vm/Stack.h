@@ -247,6 +247,7 @@ class AbstractFramePtr
     inline bool debuggerNeedsCheckPrimitiveReturn() const;
 
     inline bool isFunctionFrame() const;
+    inline bool isGeneratorFrame() const;
     inline bool isNonStrictDirectEvalFrame() const;
     inline bool isStrictEvalFrame() const;
 
@@ -2151,6 +2152,7 @@ class FrameIter
     template <class Op> inline void unaliasedForEachActual(JSContext* cx, Op op);
 
     JSObject*  environmentChain(JSContext* cx) const;
+    bool hasInitialEnvironment(JSContext* cx) const;
     CallObject& callObj(JSContext* cx) const;
 
     bool        hasArgsObj() const;

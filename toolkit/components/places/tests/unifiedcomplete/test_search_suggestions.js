@@ -5,7 +5,6 @@ const ENGINE_NAME = "engine-suggestions.xml";
 const SERVER_PORT = 9000;
 const SUGGEST_PREF = "browser.urlbar.suggest.searches";
 const SUGGEST_ENABLED_PREF = "browser.search.suggest.enabled";
-const SUGGEST_RESTRICT_TOKEN = "$";
 
 var suggestionsFn;
 var previousSuggestionsFn;
@@ -27,17 +26,8 @@ add_task(async function setup() {
   Services.prefs.setCharPref("browser.urlbar.matchBuckets", "general:5,suggestion:Infinity");
   Services.prefs.setBoolPref("browser.urlbar.geoSpecificDefaults", false);
 
-  // Set up a server that provides some suggestions by appending strings onto
-  // the search query.
-  let server = makeTestServer(SERVER_PORT);
-  server.registerPathHandler("/suggest", (req, resp) => {
-    // URL query params are x-www-form-urlencoded, which converts spaces into
-    // plus signs, so un-convert any plus signs back to spaces.
-    let searchStr = decodeURIComponent(req.queryString.replace(/\+/g, " "));
-    let suggestions = suggestionsFn(searchStr);
-    let data = [searchStr, suggestions];
-    resp.setHeader("Content-Type", "application/json", false);
-    resp.write(JSON.stringify(data));
+  let engine = await addTestSuggestionsEngine(searchStr => {
+    return suggestionsFn(searchStr);
   });
   setSuggestionsFn(searchStr => {
     let suffixes = ["foo", "bar"];
@@ -47,7 +37,6 @@ add_task(async function setup() {
   // Install the test engine.
   let oldCurrentEngine = Services.search.currentEngine;
   registerCleanupFunction(() => Services.search.currentEngine = oldCurrentEngine);
-  let engine = await addTestEngine(ENGINE_NAME, server);
   Services.search.currentEngine = engine;
 
   // We must make sure the FormHistoryStartup component is initialized.
@@ -307,11 +296,12 @@ add_task(async function restrictToken() {
 
   // Now do a restricted search to make sure only suggestions appear.
   await check_autocomplete({
-    search: SUGGEST_RESTRICT_TOKEN + " hello",
+    search: `${UrlbarTokenizer.RESTRICT.SEARCH} hello`,
     searchParam: "enable-actions",
     matches: [
       // TODO (bug 1177895) This is wrong.
-      makeSearchMatch(SUGGEST_RESTRICT_TOKEN + " hello", { engineName: ENGINE_NAME, heuristic: true }),
+      makeSearchMatch(`${UrlbarTokenizer.RESTRICT.SEARCH} hello`,
+                      { engineName: ENGINE_NAME, heuristic: true }),
       {
         uri: makeActionURI(("searchengine"), {
           engineName: ENGINE_NAME,

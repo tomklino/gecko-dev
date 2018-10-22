@@ -11,10 +11,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   FormLikeFactory: "resource://gre/modules/FormLikeFactory.jsm",
   GeckoViewAutoFill: "resource://gre/modules/GeckoViewAutoFill.jsm",
   PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.jsm",
-  ScrollPosition: "resource://gre/modules/ScrollPosition.jsm",
   Services: "resource://gre/modules/Services.jsm",
   SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.jsm",
 });
+
+const ssu = Cc["@mozilla.org/browser/sessionstore/utils;1"]
+              .getService(Ci.nsISessionStoreUtils);
 
 class GeckoViewContent extends GeckoViewContentModule {
   onInit() {
@@ -86,7 +88,7 @@ class GeckoViewContent extends GeckoViewContentModule {
 
   collectSessionState() {
     let history = SessionHistory.collect(docShell);
-    let [formdata, scrolldata] = this.Utils.mapFrameTree(content, FormData.collect, ScrollPosition.collect);
+    let [formdata, scrolldata] = this.Utils.mapFrameTree(content, FormData.collect, ssu.collectScrollPosition.bind(ssu));
 
     // Save the current document resolution.
     let zoom = { value: 1 };
@@ -181,12 +183,12 @@ class GeckoViewContent extends GeckoViewContentModule {
             let state = this.collectSessionState();
             sendAsyncMessage("GeckoView:SaveStateFinish", {
               state: state ? JSON.stringify(state) : null,
-              id: aMsg.data.id
+              id: aMsg.data.id,
             });
           } catch (e) {
             sendAsyncMessage("GeckoView:SaveStateFinish", {
               error: e.message,
-              id: aMsg.data.id
+              id: aMsg.data.id,
             });
           }
         }
@@ -201,14 +203,23 @@ class GeckoViewContent extends GeckoViewContentModule {
           addEventListener("load", _ => {
             const formdata = this._savedState.formdata;
             if (formdata) {
-              FormData.restoreTree(content, formdata);
+              this.Utils.restoreFrameTreeData(content, formdata, (frame, data) => {
+                // restore() will return false, and thus abort restoration for the
+                // current |frame| and its descendants, if |data.url| is given but
+                // doesn't match the loaded document's URL.
+                return FormData.restore(frame, data);
+              });
             }
           }, {capture: true, mozSystemGroup: true, once: true});
 
           addEventListener("pageshow", _ => {
             const scrolldata = this._savedState.scrolldata;
             if (scrolldata) {
-              ScrollPosition.restoreTree(content, scrolldata);
+              this.Utils.restoreFrameTreeData(content, scrolldata, (frame, data) => {
+                if (data.scroll) {
+                  ssu.restoreScrollPosition(frame, data.scroll);
+                }
+              });
             }
             delete this._savedState;
           }, {capture: true, mozSystemGroup: true, once: true});
@@ -266,7 +277,7 @@ class GeckoViewContent extends GeckoViewContentModule {
             elementType,
             elementSrc: (isImage || isMedia)
                         ? node.currentSrc || node.src
-                        : null
+                        : null,
           });
           aEvent.preventDefault();
         }
@@ -300,12 +311,12 @@ class GeckoViewContent extends GeckoViewContentModule {
       case "DOMTitleChanged":
         this.eventDispatcher.sendRequest({
           type: "GeckoView:DOMTitleChanged",
-          title: content.document.title
+          title: content.document.title,
         });
         break;
       case "DOMWindowFocus":
         this.eventDispatcher.sendRequest({
-          type: "GeckoView:DOMWindowFocus"
+          type: "GeckoView:DOMWindowFocus",
         });
         break;
       case "DOMWindowClose":
@@ -315,7 +326,7 @@ class GeckoViewContent extends GeckoViewContentModule {
 
         aEvent.preventDefault();
         this.eventDispatcher.sendRequest({
-          type: "GeckoView:DOMWindowClose"
+          type: "GeckoView:DOMWindowClose",
         });
         break;
       case "focusin":

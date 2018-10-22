@@ -47,6 +47,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'WinDllServices.h',
     ]
     UNIFIED_SOURCES += [
+        '/toolkit/mozapps/update/common/win_dirent.cpp',
         'nsNativeAppSupportWin.cpp',
         'WinDllServices.cpp',
     ]
@@ -98,6 +99,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     ]
 
 UNIFIED_SOURCES += [
+    '/toolkit/mozapps/update/common/commonupdatedir.cpp',
     'AutoSQLiteLifetime.cpp',
     'Bootstrap.cpp',
     'CreateAppData.cpp',
@@ -211,17 +213,15 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         '/widget/cocoa',
     ]
 
-if CONFIG['MOZ_ENABLE_XREMOTE']:
-    LOCAL_INCLUDES += [
-        '/widget/xremoteclient',
-    ]
-
 CXXFLAGS += CONFIG['TK_CFLAGS']
 CXXFLAGS += CONFIG['MOZ_DBUS_CFLAGS']
 CXXFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']
 
 if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     CXXFLAGS += CONFIG['MOZ_PANGO_CFLAGS']
+    LOCAL_INCLUDES += [
+        '/widget/xremoteclient',
+    ]
 
 DEFINES['TOPOBJDIR'] = TOPOBJDIR
 FINAL_TARGET_PP_FILES += [
