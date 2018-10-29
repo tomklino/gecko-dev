@@ -113,9 +113,13 @@ function requestsReducer(state = Requests(), action) {
 
     // Select specific request.
     case SELECT_REQUEST: {
+      // selected request should be the last clicked request
+      // for when context menu opens with keyboard button
+      const clickedRequest = state.requests.get(action.id);
       return {
         ...state,
         selectedId: action.id,
+        clickedRequest
       };
     }
 
@@ -196,6 +200,7 @@ function cloneRequest(state, id) {
   const newRequest = {
     id: clonedRequest.id + "-clone",
     method: clonedRequest.method,
+    cause: clonedRequest.cause,
     url: clonedRequest.url,
     urlDetails: clonedRequest.urlDetails,
     requestHeaders: clonedRequest.requestHeaders,

@@ -45,6 +45,11 @@ function cloneSelectedRequest() {
   }
 }
 
+/**
+  * Clone request by id - useful for when cloning a request by
+  * right clicking and selecting "Edit and Resend" from the
+  * context menu
+  */
 function cloneRequest(id) {
   return {
     type: CLONE_REQUEST,
@@ -52,7 +57,9 @@ function cloneRequest(id) {
   };
 }
 
-
+/**
+  * right click on a request - without selecting it
+  */
 function rightClickRequest(id) {
   return {
     type: RIGHT_CLICK_REQUEST,

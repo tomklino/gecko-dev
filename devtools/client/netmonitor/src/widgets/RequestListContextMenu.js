@@ -47,8 +47,10 @@ class RequestListContextMenu {
     const {
       connector,
       cloneRequest,
+      openDetailsPanelTab,
       openStatistics,
     } = this.props;
+    
     const menu = [];
     const copySubmenu = [];
 
@@ -180,7 +182,10 @@ class RequestListContextMenu {
       label: L10N.getStr("netmonitor.context.editAndResend"),
       accesskey: L10N.getStr("netmonitor.context.editAndResend.accesskey"),
       visible: !!(clickedRequest && !isCustom),
-      click: () => { cloneRequest(id) },
+      click: () => {
+        cloneRequest(id);
+        openDetailsPanelTab();
+      },
     });
 
     menu.push({

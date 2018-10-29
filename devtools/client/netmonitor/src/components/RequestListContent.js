@@ -56,6 +56,7 @@ class RequestListContent extends Component {
       networkDetailsWidth: PropTypes.number,
       networkDetailsHeight: PropTypes.number,
       cloneRequest: PropTypes.func.isRequired,
+      openDetailsPanelTab: PropTypes.func.isRequired,
       displayedRequests: PropTypes.array.isRequired,
       clickedRequest: PropTypes.object,
       firstRequestStartedMillis: PropTypes.number.isRequired,
@@ -95,7 +96,7 @@ class RequestListContent extends Component {
     // Install event handler for displaying a tooltip
     this.tooltip.startTogglingOnHover(this.refs.contentEl, this.onHover, {
       toggleDelay: REQUESTS_TOOLTIP_TOGGLE_DELAY,
-      interactive: true,
+      interactive: true
     });
     // Install event handler to hide the tooltip on scroll
     this.refs.contentEl.addEventListener("scroll", this.onScroll, true);
@@ -208,7 +209,6 @@ class RequestListContent extends Component {
     if (e.button === LEFT_MOUSE_BUTTON) {
       this.props.selectRequest(id)
     } else if(e.button === RIGHT_MOUSE_BUTTON) {
-      console.log("RIGHT_MOUSE_BUTTON clicked")
       this.props.onItemRightMouseButtonDown(id)
     }
   }
@@ -254,16 +254,18 @@ class RequestListContent extends Component {
   onContextMenu(evt) {
     evt.preventDefault();
     const { displayedRequests, clickedRequest } = this.props;
-
+    console.log("RequestListContent: onContextMenu: clickedRequest", clickedRequest)
     if (!this.contextMenu) {
       const {
         connector,
         cloneRequest,
+        openDetailsPanelTab,
         openStatistics,
       } = this.props;
       this.contextMenu = new RequestListContextMenu({
         connector,
         cloneRequest,
+        openDetailsPanelTab,
         openStatistics,
       });
     }
@@ -304,7 +306,7 @@ class RequestListContent extends Component {
             className: "requests-list-contents",
             tabIndex: 0,
             onKeyDown: this.onKeyDown,
-            style: { "--timings-scale": scale, "--timings-rev-scale": 1 / scale },
+            style: { "--timings-scale": scale, "--timings-rev-scale": 1 / scale }
           },
             RequestListHeader(),
             displayedRequests.map((item, index) => RequestListItem({
@@ -346,7 +348,10 @@ module.exports = connect(
   }),
   (dispatch, props) => ({
     cloneRequest: (id) => {
-      dispatch(Actions.cloneRequest(id))
+      dispatch(Actions.cloneRequest(id));
+    },
+    openDetailsPanelTab: () => {
+      dispatch(Actions.openNetworkDetails(true));
     },
     openStatistics: (open) => dispatch(Actions.openStatistics(props.connector, open)),
     /**
@@ -368,6 +373,7 @@ module.exports = connect(
     onItemMouseDown: (id) => {
       dispatch(Actions.selectRequest(id))
     },
+
     /**
      * A handler that opens the security tab in the details view if secure or
      * broken security indicator is clicked.
