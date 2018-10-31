@@ -254,7 +254,6 @@ class RequestListContent extends Component {
   onContextMenu(evt) {
     evt.preventDefault();
     const { displayedRequests, clickedRequest } = this.props;
-    console.log("RequestListContent: onContextMenu: clickedRequest", clickedRequest)
     if (!this.contextMenu) {
       const {
         connector,
